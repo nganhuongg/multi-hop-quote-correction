@@ -37,8 +37,6 @@ SUPPORTED = {
     ("cUSD", "PathUSD"),
     ("cUSD", "USDT0"),
     ("cUSD", "USDC.e"),
-    ("USDC.e", "USDT0"),
-    ("USDC.e", "cUSD"),
 }
 
 
@@ -112,9 +110,10 @@ def quote_candidate(client: TempoClient, source: str, target: str, amount: int, 
     hops = resolve_route(source, target)
     if amount <= 0 or amount >= 2**127:
         raise ValueError("amount must be positive and fit the hook exact-input range")
-    client.pinned_block()
     if block != BLOCK:
         raise UnsupportedRoute("only the verified block is supported in this prototype")
+    started, count = time.perf_counter(), client.count
+    client.pinned_block()
     current = amount
     legs = []
     for hop in hops:
@@ -131,7 +130,9 @@ def quote_candidate(client: TempoClient, source: str, target: str, amount: int, 
     return {"status": "candidate", "source": source, "target": target, "amountIn": amount,
             "amountOut": current, "block": block, "blockHash": BLOCK_HASH,
             "hook": HOOK, "decimals": 6, "hops": legs,
-            "composition": "independent hook quotes; execution validation required"}
+            "composition": "independent hook quotes; execution validation required",
+            "quoteMetrics": {"rpcCalls": client.count - count,
+                             "elapsedMs": round((time.perf_counter() - started) * 1000, 1)}}
 
 
 def _cast(mode: str, signature: str, *args: str) -> str:
@@ -150,6 +151,21 @@ def build_plan(candidate: dict, payer: str, recipient: str, deadline: int,
     if candidate["status"] != "candidate" or not 0 <= slippage_bps <= 10_000:
         raise ValueError("invalid candidate or slippage")
     source, target = candidate["source"], candidate["target"]
+    known_hops = resolve_route(source, target)
+    if candidate.get("block") != BLOCK or candidate.get("blockHash") != BLOCK_HASH or candidate.get("hook") != HOOK:
+        raise UnsupportedRoute("candidate is not from the verified deployment and block")
+    legs = candidate.get("hops", [])
+    if len(legs) != len(known_hops):
+        raise UnsupportedRoute("candidate path does not match the verified route")
+    running = candidate["amountIn"]
+    for leg, known in zip(legs, known_hops):
+        if (leg["source"], leg["target"], leg["poolId"], leg["zeroForOne"], leg["amountIn"]) != (
+            known.source, known.target, known.pool_id, known.zero_for_one, running
+        ):
+            raise UnsupportedRoute("candidate hop or chained amount is unsupported")
+        running = leg["amountOut"]
+    if running != candidate["amountOut"] or running <= 0:
+        raise ValueError("candidate output is inconsistent")
     amount = candidate["amountIn"]
     minimum = candidate["amountOut"] * (10_000 - slippage_bps) // 10_000
     path = "[" + ",".join(f"({TOKENS[h['target']]},500,10,{HOOK},0x)" for h in candidate["hops"]) + "]"
@@ -217,6 +233,10 @@ def run_fork_case(client: TempoClient, source: str, target: str, amount: int,
             funded = max(amount, 30_000_000)
             client.rpc("anvil_dealTIP20", [payer, TOKENS[source], hex(funded)])
             funding.append({"account": payer, "token": source, "balanceSetTo": funded})
+        gas_before = int(client.rpc("eth_getBalance", [payer, "latest"]), 16)
+        if gas_before < 10**18:
+            client.rpc("anvil_setBalance", [payer, hex(10**18)])
+            funding.append({"account": payer, "nativeGasBalanceSetTo": 10**18})
         if client.balance(TOKENS[source], MANAGER) != manager_before:
             raise RpcError("PoolManager balance changed during payer-only setup")
         std = standard_quote(client, source, target, amount)
@@ -234,7 +254,7 @@ def run_fork_case(client: TempoClient, source: str, target: str, amount: int,
         result["candidate"] = candidate
         deadline = int(block["timestamp"], 16) + 3600
         plan = build_plan(candidate, payer, recipient, deadline)
-        result["plan"] = {k: v for k, v in plan.items() if k != "data"}
+        result["plan"] = plan
         tx = {k: plan[k] for k in ("to", "from", "data", "value")}
         try:
             client.rpc("eth_call", [tx, hex(BLOCK)])
@@ -249,10 +269,6 @@ def run_fork_case(client: TempoClient, source: str, target: str, amount: int,
         if len(gross_transfers) != 1:
             raise RpcError(f"expected one output transfer to recipient, found {gross_transfers}")
         recipient_before = client.balance(TOKENS[target], recipient)
-        gas_before = int(client.rpc("eth_getBalance", [payer, "latest"]), 16)
-        if gas_before < 10**18:
-            client.rpc("anvil_setBalance", [payer, hex(10**18)])
-            funding.append({"account": payer, "nativeGasBalanceSetTo": 10**18})
         client.rpc("anvil_impersonateAccount", [payer])
         impersonated = True
         tx["gas"] = hex(2_000_000)
@@ -274,6 +290,8 @@ def run_fork_case(client: TempoClient, source: str, target: str, amount: int,
                                 "matchesQuote": gross == candidate["amountOut"],
                                 "roundingDifference": gross - candidate["amountOut"],
                                 "gasUsed": int(receipt["gasUsed"], 16), "hookCalls": hook_calls,
+                                "preflightTraceGasUsed": int(trace.get("gasUsed", "0x0"), 16),
+                                "effectiveGasPrice": int(receipt.get("effectiveGasPrice", "0x0"), 16),
                                 "localForkTxHash": tx_hash}
         return result
     finally:

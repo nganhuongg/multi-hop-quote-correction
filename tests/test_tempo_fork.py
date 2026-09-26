@@ -23,6 +23,10 @@ class RealTempoForkTests(unittest.TestCase):
         self.assertEqual(result["poolManagerInputBalance"], 19_862_459)
         self.assertEqual(result["standardQuote"]["status"], "revert")
         self.assertEqual(result["candidate"]["amountOut"], 24_997_499)
+        self.assertEqual(result["candidate"]["blockHash"], "0xf6c6323efefde7d64d544512326ea00ab1d3f0cf75bddd55e7699596ee4123c3")
+        self.assertEqual(result["plan"]["actions"], ["SETTLE", "SWAP_EXACT_IN", "TAKE"])
+        self.assertEqual(result["plan"]["minimumOutput"], 24_872_511)
+        self.assertTrue(result["plan"]["data"].startswith("0x"))
         self.assertEqual(result["execution"]["status"], "success")
         self.assertEqual(result["execution"]["grossOutputTransfer"], 24_997_499)
         self.assertEqual(result["execution"]["recipientDelta"], 24_997_499)
@@ -34,6 +38,12 @@ class RealTempoForkTests(unittest.TestCase):
         self.assertEqual(result["standardQuote"]["amountOut"], 999_899)
         self.assertEqual(result["candidate"]["amountOut"], 999_899)
         self.assertEqual(result["execution"]["recipientDelta"], 999_899)
+
+    def test_other_supported_multihop_target(self):
+        result = run_fork_case(self.client, "cUSD", "USDC.e", 1_000_000)
+        self.assertEqual(result["standardQuote"]["amountOut"], 999_800)
+        self.assertEqual(result["candidate"]["amountOut"], 999_800)
+        self.assertEqual(result["execution"]["recipientDelta"], 999_800)
 
     def test_single_hop_control(self):
         result = run_fork_case(self.client, "cUSD", "PathUSD", 1_000_000)
