@@ -3,195 +3,122 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="A concise analysis of quote and execution behavior across controlled Uniswap v4 and deployed Tempo test cases."
-    />
-    <title>Quote and Execution Analysis</title>
+    <meta name="description" content="An evidence-based explanation of a quote and funded execution gap for tested Tempo routes through Uniswap v4." />
+    <title>Tempo and Uniswap v4 - Quote Path Analysis</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="site-header">
-      <a class="brand" href="#top" aria-label="Analysis report home">
-        <span><strong>Route Analysis Report</strong><small>Tempo × Uniswap v4</small></span>
-      </a>
-
+      <a class="brand" href="#top"><strong>Tempo route analysis</strong><small>Uniswap v4 quote investigation</small></a>
       <nav class="top-tabs" role="tablist" aria-label="Dashboard chapters">
-        <button class="top-tab active" id="problem-tab" data-tab="problem" role="tab" aria-selected="true" aria-controls="problem-panel" type="button">
-          <span>01</span> Problem Exploration
-        </button>
-        <span class="tab-connector" aria-hidden="true"></span>
-        <button class="top-tab" id="solution-tab" data-tab="solution" role="tab" aria-selected="false" aria-controls="solution-panel" type="button">
-          <span>02</span> Solution
-        </button>
+        <button class="top-tab active" id="problem-tab" data-tab="problem" role="tab" aria-selected="true" aria-controls="problem-panel" type="button">Problem Exploration</button>
+        <button class="top-tab" id="solution-tab" data-tab="solution" role="tab" aria-selected="false" aria-controls="solution-panel" type="button">Solution</button>
       </nav>
     </header>
 
     <main id="top">
-      <section class="tab-panel report-panel active" id="problem-panel" role="tabpanel" aria-labelledby="problem-tab">
-        <section class="mechanism" id="mechanism" aria-labelledby="mechanism-title">
-          <div class="section-label"><strong>01</strong><span id="mechanism-title">Overall mechanism</span></div>
-          <div class="mechanism-heading">
-            <p>
-              A route defines the ordered pools. A quote simulates that route to estimate output. A swap executes it with real token settlement. The analysis compares both processes from the same starting state.
-            </p>
+      <section class="tab-panel active" id="problem-panel" role="tabpanel" aria-labelledby="problem-tab">
+        <section class="intro page-width">
+          <p class="plain-label">The route under investigation</p>
+          <h1>Why can a swap complete when its quote does not?</h1>
+          <p class="lede">
+            We examined one exact-input route from <strong>cUSD</strong> to <strong>USDT0</strong> through
+            <strong>PathUSD</strong>. A router needs a quote before execution so it can compare this route with other
+            candidates. If the quote produces no amount, this route cannot take part in that comparison.
+          </p>
+          <div class="main-route" aria-label="cUSD through PathUSD to USDT0 using two Tempo-connected pools">
+            <div class="route-token">cUSD</div><span>&rarr;</span>
+            <div class="route-pool"><strong>Pool 1</strong><small>Tempo hook<br />cUSD / PathUSD</small></div><span>&rarr;</span>
+            <div class="route-token">PathUSD</div><span>&rarr;</span>
+            <div class="route-pool"><strong>Pool 2</strong><small>Tempo hook<br />PathUSD / USDT0</small></div><span>&rarr;</span>
+            <div class="route-token">USDT0</div>
           </div>
-          <div class="mechanism-grid">
-            <article><span>Route</span><strong>Token path</strong><p>One or two pools connect the fixed input token to the target token.</p></article>
-            <article><span>Quote</span><strong>Output estimate</strong><p>V4Quoter previews the route before a transaction and returns an amount or a revert.</p></article>
-            <article><span>Swap</span><strong>Full execution</strong><p>The router settles input, runs every pool, and transfers output to the recipient.</p></article>
-          </div>
-        </section>
-
-        <section class="dataset" id="dataset" aria-labelledby="dataset-title">
-          <div class="section-label"><strong>02</strong><span id="dataset-title">Experiment design</span></div>
-          <div class="dataset-heading">
-            <p>
-              The cases vary route length, hook position, target token, input amount, and liquidity. Five synthetic fixtures isolate the mechanism; six fork cases test deployed contracts at one historical state.
-            </p>
-          </div>
-
-          <div class="dataset-stats" role="list" aria-label="Dataset summary">
-            <div role="listitem"><strong>11</strong><span>Total test cases</span><small>One consistent comparison: quote versus completed execution</small></div>
-            <div role="listitem"><strong>5</strong><span>Controlled cases</span><small>Synthetic tokens and pools isolate one behavior at a time</small></div>
-            <div role="listitem"><strong>6</strong><span>Tempo fork cases</span><small>Deployed contracts at one pinned historical block</small></div>
-            <div role="listitem"><strong>1–2</strong><span>Pools per route</span><small>Single-hop and multi-hop paths are both represented</small></div>
-          </div>
-
-          <div class="context-card">
-            <div class="context-copy">
-              <span class="context-kicker">PRIMARY REAL-WORLD CONTEXT</span>
-              <h3>Swap cUSD into another Tempo stablecoin.</h3>
-              <p>
-                The main route begins with <strong>cUSD</strong>, converts through <strong>PathUSD</strong>, and ends in
-                <strong>USDT0</strong>. A second target, <strong>USDC.e</strong>, checks whether the result changes with a
-                different final pool. All real cases use exact input: the input amount is fixed, and we measure the output.
-              </p>
-            </div>
-            <div class="context-route" aria-label="Main route and alternative target">
-              <div class="route-line">
-                <span class="token c">cUSD</span><i></i><span class="pool">Tempo pool<br /><small>cUSD / PathUSD</small></span><i></i><span class="token p">PathUSD</span>
-              </div>
-              <div class="route-branch">
-                <i></i>
-                <div>
-                  <span class="pool">Tempo pool<br /><small>PathUSD / USDT0</small></span><i></i><span class="token t">USDT0</span>
-                  <span class="pool alt">Tempo pool<br /><small>PathUSD / USDC.e</small></span><i></i><span class="token u">USDC.e</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="pool-context">
-            <div class="snapshot">
-              <h3>Real-test snapshot</h3>
-              <div><span>Network</span><strong>Tempo · chain 4217</strong></div>
-              <div><span>Block</span><strong>41,183,156</strong></div>
-              <div><span>Real pools</span><strong>3 Tempo-connected pools</strong></div>
-              <div><span>Pool settings</span><strong>Same hook · fee 500 · spacing 10</strong></div>
-              <p>The real tests use a local copy of this historical chain state. No transaction is sent to mainnet.</p>
-            </div>
+          <div class="terms">
+            <p><strong>PoolManager</strong> is the shared Uniswap v4 contract that holds and accounts for pool tokens.</p>
+            <p><strong>Tempo hook</strong> is custom pool code that asks PoolManager for the input token, then uses Tempo's exchange.</p>
           </div>
         </section>
 
-        <section class="experiment-log" id="experiments" aria-labelledby="log-title">
-          <div class="log-heading">
-            <div>
-              <div class="section-label"><strong>03</strong><span id="log-title">Experiment log</span></div>
-              <p>
-                Each row states the experimental setup and result. Expand it for the exact route, quote, execution,
-                and failure mechanism where applicable.
-              </p>
-            </div>
-            <div class="result-key" aria-label="Result key">
-              <span><i class="good"></i>Matched</span>
-              <span><i class="issue"></i>Issue</span>
-              <span><i class="reject"></i>Valid rejection</span>
-            </div>
+        <section class="process-section page-width" aria-labelledby="process-title">
+          <h2 id="process-title">The two processes diverge before the first Tempo conversion</h2>
+          <p>The affected quote simulation can reach the hook before the required input balance is prepared. A funded transaction supplies the input first, then runs the same route.</p>
+          <div class="process-comparison">
+            <article class="process-card quote-process">
+              <header><span>Quote simulation</span><strong>Stops with no quote</strong></header>
+              <ol>
+                <li><b>1</b><span>Start simulating cUSD &rarr; PathUSD &rarr; USDT0.</span></li>
+                <li><b>2</b><span>The first Tempo hook asks PoolManager to transfer cUSD.</span></li>
+                <li class="divergence"><b>!</b><span><strong>Input is not prepared.</strong> The token transfer reverts here.</span></li>
+                <li class="not-reached"><b>4</b><span>No output amount is returned for route comparison.</span></li>
+              </ol>
+            </article>
+            <article class="process-card execution-process">
+              <header><span>Funded execution</span><strong>Can complete</strong></header>
+              <ol>
+                <li><b>1</b><span>Transfer the user's cUSD into PoolManager first.</span></li>
+                <li class="success-step"><b>2</b><span><strong>Input is prepared.</strong> The hook's transfer succeeds.</span></li>
+                <li><b>3</b><span>Run both Tempo conversions through PathUSD.</span></li>
+                <li><b>4</b><span>Transfer USDT0 to the recipient.</span></li>
+              </ol>
+            </article>
           </div>
+          <div class="meaning-grid">
+            <div><strong>No quote</strong><span>The simulation stopped before returning an amount.</span></div>
+            <div><strong>Not a wrong quote</strong><span>There is no quoted amount to compare with execution.</span></div>
+            <div><strong>Not proof of no liquidity</strong><span>A separately funded execution can still complete.</span></div>
+          </div>
+        </section>
 
-          <div class="filters" role="group" aria-label="Filter test cases">
+        <section class="design page-width" aria-labelledby="design-title">
+          <h2 id="design-title">How we tested the explanation</h2>
+          <div class="hypothesis"><strong>Hypothesis</strong><p>The missing quote depends on when the hook's input becomes available, not on multi-hop routing or hooks in general.</p></div>
+          <div class="control-grid">
+            <article><strong>Ordinary pools</strong><p>One-hop and two-hop routes test whether multi-hop alone causes the failure.</p></article>
+            <article><strong>Fee hooks</strong><p>Two fee hooks test whether quote simulation skips custom hook calls.</p></article>
+            <article><strong>Hook position</strong><p>Moving the Tempo-style hook from the first pool to the last tests when its input becomes available.</p></article>
+            <article><strong>Small real swaps</strong><p>Small Tempo routes test whether the deployed route always fails. It does not.</p></article>
+            <article><strong>Balance boundary</strong><p>Inputs just above PoolManager's cUSD balance test whether failure follows that balance.</p></article>
+            <article><strong>Very large input</strong><p>A 1,000,000 cUSD input checks genuine Tempo Exchange illiquidity.</p></article>
+          </div>
+          <div class="count-note">
+            <div><strong>11</strong><span>dashboard cases</span></div><p>Presentation cases assembled from controlled and fork evidence.</p>
+            <div><strong>13</strong><span>local assertions</span></div><p>A separate count from the local test harness, not 13 dashboard cases.</p>
+          </div>
+        </section>
+
+        <section class="experiment-log page-width" id="experiments" aria-labelledby="experiments-title">
+          <h2 id="experiments-title">Experiment cases</h2>
+          <p>Open a case to see the same fields each time: full path, input and starting balance, quote, funded execution, and interpretation.</p>
+          <div class="filters" role="group" aria-label="Filter experiment cases">
             <button class="filter active" data-filter="all" type="button">All <span>11</span></button>
-            <button class="filter" data-filter="matched" type="button">Quote matched execution <span>7</span></button>
-            <button class="filter" data-filter="mismatch" type="button">Mismatch found <span>3</span></button>
-            <button class="filter" data-filter="rejected" type="button">Correct rejection <span>1</span></button>
+            <button class="filter" data-filter="returned" type="button">Quote returned <span>6</span></button>
+            <button class="filter" data-filter="gap" type="button">No quote, execution works <span>3</span></button>
+            <button class="filter" data-filter="verify" type="button">Needs verification <span>1</span></button>
+            <button class="filter" data-filter="reject" type="button">Both fail <span>1</span></button>
           </div>
-
-          <div class="case-group-label">
-            <span>Part A</span><strong>Controlled environment</strong><p>Five small cases isolate route shape, hook position, and token availability.</p>
-          </div>
+          <div class="case-group-label"><strong>Controlled cases</strong><span>Cases 01-05</span></div>
           <div class="case-list" id="local-cases"></div>
-
-          <div class="case-group-label real">
-            <span>Part B</span><strong>Real Tempo environment</strong><p>Six fork cases vary amount, target token, route length, and liquidity outcome.</p>
-          </div>
+          <div class="case-group-label real"><strong>Tempo fork cases</strong><span>Cases 06-11</span></div>
           <div class="case-list" id="fork-cases"></div>
         </section>
 
-        <section class="generalization" id="finding" aria-labelledby="generalization-title">
-          <div class="section-label"><strong>04</strong><span id="generalization-title">Finding</span></div>
-          <div class="generalization-grid">
-            <div>
-              <p>
-                The problem is not “multi-hop is broken” and it is not “Tempo has no liquidity.” Most cases work.
-                The mismatch appears when the quote preview reaches a custom conversion step without first preparing
-                the input that the real swap can prepare.
-              </p>
-            </div>
-            <div class="process-compare">
-              <article class="process bad-process">
-                <div><span>QUOTE PROCESS</span><b>Can fail early</b></div>
-                <ol>
-                  <li><i>1</i><span>Start route preview</span></li>
-                  <li><i>2</i><span>Enter custom Tempo pool</span></li>
-                  <li class="break"><i>!</i><span>Required input is not prepared</span></li>
-                  <li class="muted"><i>4</i><span>No result reaches route comparison</span></li>
-                </ol>
-              </article>
-              <article class="process good-process">
-                <div><span>REAL SWAP PROCESS</span><b>Can complete</b></div>
-                <ol>
-                  <li><i>1</i><span>Prepare the user's input</span></li>
-                  <li><i>2</i><span>Run both pool conversions</span></li>
-                  <li><i>3</i><span>Send output to recipient</span></li>
-                  <li><i>✓</i><span>Completed amount can be measured</span></li>
-                </ol>
-              </article>
-            </div>
-          </div>
-          <div class="problem-statement">
-            <span>GENERAL PROBLEM</span>
-            <strong>A route may be executable, but disappear from route comparison because its quote preview did not reproduce the same preparation steps as execution.</strong>
-          </div>
+        <section class="claim page-width" aria-labelledby="claim-title">
+          <h2 id="claim-title">What the evidence supports</h2>
+          <blockquote>For certain multi-hop Tempo routes, the examined UniRoute quote path can fail to prepare the balance required by hook execution. An executable route may therefore have no usable quote for route comparison. A fix must produce both an accurate quote and a compatible funded execution plan.</blockquote>
+          <p>This dashboard does not claim measured production impact, user loss, or better prices. Those claims require production traffic data and same-block comparisons against other executable routes, including gas.</p>
         </section>
       </section>
 
       <section class="tab-panel solution-panel" id="solution-panel" role="tabpanel" aria-labelledby="solution-tab" hidden>
-        <div class="empty-solution">
-          <div class="solution-index">02</div>
-          <div class="solution-copy">
-            <span>SOLUTION</span>
-            <h1>Reserved for the next chapter.</h1>
-            <p>
-              The proposed correction, implementation details, and before-and-after validation will be presented here.
-            </p>
-          </div>
-          <div class="solution-route" aria-hidden="true">
-            <i></i><b></b><i></i><b></b><i></i>
-          </div>
+        <div class="empty-solution page-width">
+          <p class="plain-label">Solution</p>
+          <h1>No fix is presented yet.</h1>
+          <p>This section is reserved for an implemented quote method, its compatible funded execution plan, and before-and-after validation.</p>
         </div>
       </section>
     </main>
 
-    <footer>
-      <div class="brand footer-brand">
-        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M10 9h28v9H19v5h17v8H19v8H10V9Z" /></svg></span>
-        <span><strong>Route Analysis Report</strong><small>Evidence before claims.</small></span>
-      </div>
-      <p>11 cases · controlled fixtures + deployed Tempo contracts · no mainnet transaction</p>
-      <a href="#top">Back to top ↑</a>
-    </footer>
-
+    <footer class="page-width"><strong>Tempo route analysis</strong><span>11 dashboard cases; 13 separate local assertions; no production-impact claim.</span></footer>
     <script src="./app.js"></script>
   </body>
 </html>
