@@ -39,6 +39,8 @@ def validate_tempo_on_fork(client: TempoClient, request: RouteRequest,
     if (execution["grossOutputTransfer"] != candidate["amountOut"]
             or not execution["matchesQuote"]):
         return {"status": "failed", "reason": "full-router gross output differs from candidate"}
+    if execution["recipientDelta"] != candidate["amountOut"]:
+        return {"status": "failed", "reason": "recipient balance delta differs from candidate"}
     return {"status": "success", "amountOut": execution["grossOutputTransfer"],
             "recipientDelta": execution["recipientDelta"],
             "gasUsed": execution["gasUsed"], "hookCalls": execution["hookCalls"]}
@@ -70,8 +72,11 @@ def dispatch_quotes(client: TempoClient, requests: list[RouteRequest],
                    "validationStatus": "not_attempted", "amountOut": None,
                    "quoteError": None, "validationError": None}
         outcomes.append(outcome)
-        is_tempo = any(hop.pool_key.hooks.lower() == HOOK for hop in request.route.hops)
         try:
+            hooks = [hop.pool_key.hooks.lower() for hop in request.route.hops]
+            is_tempo = HOOK in hooks
+            if any(hook not in (HOOK, "0x" + "00" * 20) for hook in hooks):
+                raise UnsupportedRoute("unverified hook deployment")
             if is_tempo:
                 outcome["quotePath"] = "tempo_hook"
                 validate_supported_route(request.route, context)

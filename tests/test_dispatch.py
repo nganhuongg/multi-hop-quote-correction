@@ -110,6 +110,18 @@ class DispatchTests(unittest.TestCase):
         self.assertIn("NotEnoughLiquidity", outcome["quoteError"])
         self.assertEqual(client.tags, [])
 
+    def test_unknown_custom_hook_is_explicitly_rejected(self):
+        bad_key = replace(ORDINARY_ROUTE.hops[0].pool_key,
+                          hooks="0x" + "11" * 20)
+        route = replace(ORDINARY_ROUTE,
+                        hops=(replace(ORDINARY_ROUTE.hops[0], pool_key=bad_key),))
+        batch = dispatch_quotes(HookClient(), [replace(self.ordinary, route=route)],
+                                HISTORICAL_CONTEXT,
+                                lambda *_: self.fail("unverified hook reached standard quoter"))
+        self.assertEqual(batch["outcomes"][0]["quoteStatus"], "unsupported")
+        self.assertIn("unverified hook", batch["outcomes"][0]["quoteError"])
+        self.assertEqual(batch["comparisonInput"], [])
+
     def test_validation_mismatch_keeps_candidate_out_of_comparison(self):
         batch = dispatch_quotes(HookClient(), [self.tempo], HISTORICAL_CONTEXT,
                                 validator=lambda *_: {"status": "success", "amountOut": 1})

@@ -70,6 +70,18 @@ class RealTempoForkTests(unittest.TestCase):
         self.assertEqual(batch["comparisonInput"][0]["amountOut"], 24_997_499)
         self.assertEqual(batch["comparisonInput"][0]["routeId"], "verified-tempo")
 
+    def test_single_hop_net_output_difference_is_not_compared(self):
+        request = RouteRequest("path-usd", resolve_route("cUSD", "PathUSD"), 1_000_000)
+        batch = dispatch_quotes(
+            self.client, [request], HISTORICAL_CONTEXT,
+            validator=lambda req, quote, block: validate_tempo_on_fork(self.client, req, quote, block),
+        )
+        outcome = batch["outcomes"][0]
+        self.assertEqual(outcome["quoteStatus"], "candidate")
+        self.assertEqual(outcome["validationStatus"], "failed")
+        self.assertIn("recipient balance delta", outcome["validationError"])
+        self.assertEqual(batch["comparisonInput"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
