@@ -2,7 +2,7 @@ const cases = [
   {
     id: "L01", group: "local", filter: "matched", hop: "single-hop",
     source: "Token A", target: "Token B", amount: "1,000,000 raw units",
-    description: "Single ordinary-pool baseline with a fixed input and no custom hook.",
+    description: "Synthetic ordinary-pool baseline with a fixed input and no custom hook.",
     result: "Matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "Token A" },
@@ -14,7 +14,7 @@ const cases = [
   {
     id: "L02", group: "local", filter: "matched", hop: "multi-hop",
     source: "Token A", target: "Token C", amount: "1,000,000 raw units",
-    description: "Two ordinary pools isolate multi-hop behavior without custom hook logic.",
+    description: "Synthetic two-pool fixture isolates multi-hop behavior without custom hook logic.",
     result: "Matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "Token A" }, { type: "pool", label: "Pool 1", sub: "Ordinary" },
@@ -68,7 +68,7 @@ const cases = [
   {
     id: "F01", group: "fork", filter: "matched", hop: "single-hop",
     source: "cUSD", target: "PathUSD", amount: "1.000000 cUSD",
-    description: "The hook quote matches the gross transfer; the payer-recipient also pays gas in PathUSD.",
+    description: "The hook quote matches the gross swap transfer; the payer-recipient separately pays gas in PathUSD.",
     result: "Gross matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Tempo pool", sub: "cUSD / PathUSD" },
@@ -121,14 +121,14 @@ const cases = [
   {
     id: "F05", group: "fork", filter: "matched", hop: "multi-hop",
     source: "cUSD", target: "USDT0", amount: "25.000000 cUSD",
-    description: "Only the payer is funded; the recovered candidate is checked against a settle-before-swap transaction.",
+    description: "Only the payer is funded; the recovered candidate passes full settle-before-swap Universal Router validation.",
     result: "Recovered", resultTone: "issue", routeWorks: "With prepay", standard: "V4Quoter fails",
     route: [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Pool 1", sub: "cUSD / PathUSD" },
       { type: "token", label: "PathUSD" }, { type: "pool hook", label: "Pool 2", sub: "PathUSD / USDT0" },
       { type: "token", label: "USDT0" },
     ],
-    comparison: { quoteStatus: "Candidate quote completed", quoteAmount: "24.997499 USDT0", executionStatus: "Completed with matching plan", executionAmount: "24.997499 USDT0", matched: true, note: "The standard V4Quoter failed, so this row compares the recovered candidate quote with its matching execution plan." },
+    comparison: { quoteStatus: "Candidate quote completed", quoteAmount: "24.997499 USDT0", executionStatus: "Completed with matching plan", executionAmount: "24.997499 USDT0", matched: true, note: "The standard V4Quoter failed. The recovered quote matches full Universal Router execution and the validated candidate enters comparison. A candidate without conclusive execution evidence remains ineligible." },
   },
   {
     id: "F06", group: "fork", filter: "rejected", hop: "multi-hop",

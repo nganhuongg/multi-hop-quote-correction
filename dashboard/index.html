@@ -47,7 +47,7 @@
           <div class="section-label"><strong>02</strong><span id="dataset-title">Experiment design</span></div>
           <div class="dataset-heading">
             <p>
-              The cases vary route length, hook position, target token, input amount, and liquidity. Five synthetic fixtures isolate the mechanism; six fork cases test deployed contracts at one historical state.
+              These are recorded results, not a live quote service. Five synthetic fixtures isolate the mechanism; six Tempo fork cases test deployed contracts at block 41,183,156. They vary route length, hook position, target token, input amount, and liquidity.
             </p>
           </div>
 
@@ -171,9 +171,9 @@
           <div class="solution-index">02</div>
           <div class="solution-copy">
             <span>SOLUTION</span>
-            <h1>Reserved for the next chapter.</h1>
+            <h1>Validated quote recovery on the pinned Tempo fork.</h1>
             <p>
-              The proposed correction, implementation details, and before-and-after validation will be presented here.
+              The standalone prototype composes supported Tempo hop quotes and admits a candidate only after matching full Universal Router execution. At block 41,183,156, the 25 cUSD route recovers 24.997499 USDT0; the 1 cUSD PathUSD route reconciles 0.999800 gross swap output with a 0.999479 wallet increase and a separate 0.000321 PathUSD gas charge. These are recorded fork results, not live quotes or a production UniRoute deployment. The proposed UniRoute patch still needs its real validator wired into the private service.
             </p>
           </div>
           <div class="solution-route" aria-hidden="true">
