@@ -1,0 +1,23 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = []
+allow_paths = ["../v4-hooks-public", "../v4-core"]
+solc_version = "0.8.29"
+auto_detect_remappings = false
+optimizer = true
+optimizer_runs = 200
+evm_version = "cancun"
+gas_limit = 3000000000
+fs_permissions = [{ access = "read", path = "/Users/harry/uniswap-v4-study/v4-core/out" }]
+remappings = [
+  "@uniswap/v4-core/=../v4-hooks-public/lib/v4-core/",
+  "@uniswap/v4-periphery/=../v4-hooks-public/lib/v4-periphery/",
+  "@openzeppelin/contracts/=../v4-hooks-public/lib/openzeppelin-contracts/contracts/",
+  "@protocol-fees/=../v4-hooks-public/lib/protocol-fees/src/",
+  "v4-core/=../v4-hooks-public/lib/v4-core/src/",
+  "forge-std/=../v4-hooks-public/lib/forge-std/src/",
+  "solmate/=../v4-hooks-public/lib/v4-core/lib/solmate/",
+  "v4-hooks-public/=../v4-hooks-public/"
+]

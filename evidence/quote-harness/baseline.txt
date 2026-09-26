@@ -1,0 +1,44 @@
+No files changed, compilation skipped
+
+Ran 10 tests for test/QuoteRegression.t.sol:QuoteRegressionTest
+[PASS] test_A_single_no_hook() (gas: 552799)
+Logs:
+  full router gas: 111641
+
+[PASS] test_B_two_no_hooks() (gas: 953660)
+Logs:
+  full router gas: 143961
+
+[PASS] test_C_single_fee_hook_fee_off_on_same_snapshot() (gas: 1054029)
+Logs:
+  full router gas: 140966
+  full router gas: 191753
+
+[PASS] test_D_fee_hook_first() (gas: 1146945)
+Logs:
+  full router gas: 231374
+
+[PASS] test_E_fee_hook_last() (gas: 1150412)
+Logs:
+  full router gas: 229402
+
+[PASS] test_F_two_fee_hooks() (gas: 1339545)
+Logs:
+  full router gas: 311487
+
+[PASS] test_G_single_tempo_direct_quote_and_router() (gas: 180418833)
+Logs:
+  full router gas: 232464
+
+[PASS] test_H_tempo_first_quoter_fails_but_router_succeeds() (gas: 180862978)
+Logs:
+  full router gas: 252984
+
+[PASS] test_H_tempo_last_quoter_and_router() (gas: 180974847)
+Logs:
+  full router gas: 258312
+
+[PASS] test_no_hook_genuine_insufficient_liquidity() (gas: 1200541)
+Suite result: ok. 10 passed; 0 failed; 0 skipped; finished in 735.73ms (2.21s CPU time)
+
+Ran 1 test suite in 736.50ms (735.73ms CPU time): 10 tests passed, 0 failed, 0 skipped (10 total tests)

@@ -1,0 +1,182 @@
+[
+  {
+    "file": "tempo_multihop_replay_41183156.jsonl",
+    "block": 41183156,
+    "source": "0x20c0000000000000000000000520792dcccccccc",
+    "target": "0x20c00000000000000000000014f22ca97301eb73",
+    "poolIds": [
+      "0x68d0800bf43bbf6ca33f5d92ce22b882c04b12194358b38ce91fa10b55e6ce57",
+      "0x592553ff97e181f7d1df0d5a63937f5f11ae2d9e0964e22d193313c4506a9e22"
+    ],
+    "payer": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+    "managerInputBalance": 19862459,
+    "payerInputBalance": 5249475,
+    "amountIn": 1000000,
+    "quoterOutput": 999899,
+    "execution": "success",
+    "receivedOutput": 999899,
+    "quoteMatchesExecution": true,
+    "hookCalls": 2,
+    "gasUsed": 323356
+  },
+  {
+    "file": "tempo_multihop_replay_41183156.jsonl",
+    "block": 41183156,
+    "source": "0x20c0000000000000000000000520792dcccccccc",
+    "target": "0x20c00000000000000000000014f22ca97301eb73",
+    "poolIds": [
+      "0x68d0800bf43bbf6ca33f5d92ce22b882c04b12194358b38ce91fa10b55e6ce57",
+      "0x592553ff97e181f7d1df0d5a63937f5f11ae2d9e0964e22d193313c4506a9e22"
+    ],
+    "payer": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+    "managerInputBalance": 19862459,
+    "payerInputBalance": 5249475,
+    "amountIn": 5249475,
+    "quoterOutput": 5248949,
+    "execution": "success",
+    "receivedOutput": 5248949,
+    "quoteMatchesExecution": true,
+    "hookCalls": 2,
+    "gasUsed": 328256
+  },
+  {
+    "file": "tempo_multihop_replay_41183156.jsonl",
+    "block": 41183156,
+    "source": "0x20c0000000000000000000000520792dcccccccc",
+    "target": "0x20c00000000000000000000014f22ca97301eb73",
+    "poolIds": [
+      "0x68d0800bf43bbf6ca33f5d92ce22b882c04b12194358b38ce91fa10b55e6ce57",
+      "0x592553ff97e181f7d1df0d5a63937f5f11ae2d9e0964e22d193313c4506a9e22"
+    ],
+    "payer": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+    "managerInputBalance": 19862459,
+    "payerInputBalance": 5249475,
+    "amountIn": 25000000,
+    "quoterOutput": null,
+    "execution": "revert",
+    "receivedOutput": [],
+    "quoteMatchesExecution": null,
+    "hookCalls": 1,
+    "gasUsed": 63190
+  },
+  {
+    "file": "tempo_multihop_usdce_41183156.jsonl",
+    "block": 41183156,
+    "source": "0x20c0000000000000000000000520792dcccccccc",
+    "target": "0x20c000000000000000000000b9537d11c60e8b50",
+    "poolIds": [
+      "0x68d0800bf43bbf6ca33f5d92ce22b882c04b12194358b38ce91fa10b55e6ce57",
+      "0x00cdb9b18686cc49430bd3ea24a241633baf4af84029a014f2be22ec5e295588"
+    ],
+    "payer": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+    "managerInputBalance": 19862459,
+    "payerInputBalance": 5249475,
+    "amountIn": 1000000,
+    "quoterOutput": 999800,
+    "execution": "success",
+    "receivedOutput": 999800,
+    "quoteMatchesExecution": true,
+    "hookCalls": 2,
+    "gasUsed": 312156
+  },
+  {
+    "file": "tempo_multihop_usdce_41183156.jsonl",
+    "block": 41183156,
+    "source": "0x20c0000000000000000000000520792dcccccccc",
+    "target": "0x20c000000000000000000000b9537d11c60e8b50",
+    "poolIds": [
+      "0x68d0800bf43bbf6ca33f5d92ce22b882c04b12194358b38ce91fa10b55e6ce57",
+      "0x00cdb9b18686cc49430bd3ea24a241633baf4af84029a014f2be22ec5e295588"
+    ],
+    "payer": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+    "managerInputBalance": 19862459,
+    "payerInputBalance": 5249475,
+    "amountIn": 5249475,
+    "quoterOutput": 5248425,
+    "execution": "success",
+    "receivedOutput": 5248425,
+    "quoteMatchesExecution": true,
+    "hookCalls": 2,
+    "gasUsed": 317056
+  },
+  {
+    "file": "tempo_multihop_usdce_usdt0_41115563.jsonl",
+    "block": 41115563,
+    "source": "0x20c000000000000000000000b9537d11c60e8b50",
+    "target": "0x20c00000000000000000000014f22ca97301eb73",
+    "poolIds": [
+      "0x00cdb9b18686cc49430bd3ea24a241633baf4af84029a014f2be22ec5e295588",
+      "0x592553ff97e181f7d1df0d5a63937f5f11ae2d9e0964e22d193313c4506a9e22"
+    ],
+    "payer": "0x915926b61b61ef91ea00a46cccf6a85c289b32a1",
+    "managerInputBalance": 20531620657,
+    "payerInputBalance": 10448955,
+    "amountIn": 1000000,
+    "quoterOutput": 1000000,
+    "execution": "success",
+    "receivedOutput": 1000000,
+    "quoteMatchesExecution": true,
+    "hookCalls": 2,
+    "gasUsed": 585524
+  },
+  {
+    "file": "tempo_multihop_usdce_usdt0_41115563.jsonl",
+    "block": 41115563,
+    "source": "0x20c000000000000000000000b9537d11c60e8b50",
+    "target": "0x20c00000000000000000000014f22ca97301eb73",
+    "poolIds": [
+      "0x00cdb9b18686cc49430bd3ea24a241633baf4af84029a014f2be22ec5e295588",
+      "0x592553ff97e181f7d1df0d5a63937f5f11ae2d9e0964e22d193313c4506a9e22"
+    ],
+    "payer": "0x915926b61b61ef91ea00a46cccf6a85c289b32a1",
+    "managerInputBalance": 20531620657,
+    "payerInputBalance": 10448955,
+    "amountIn": 10448955,
+    "quoterOutput": 10448954,
+    "execution": "success",
+    "receivedOutput": 10448954,
+    "quoteMatchesExecution": true,
+    "hookCalls": 2,
+    "gasUsed": 590424
+  },
+  {
+    "file": "tempo_multihop_usdce_cusd_41115563.jsonl",
+    "block": 41115563,
+    "source": "0x20c000000000000000000000b9537d11c60e8b50",
+    "target": "0x20c0000000000000000000000520792dcccccccc",
+    "poolIds": [
+      "0x00cdb9b18686cc49430bd3ea24a241633baf4af84029a014f2be22ec5e295588",
+      "0x68d0800bf43bbf6ca33f5d92ce22b882c04b12194358b38ce91fa10b55e6ce57"
+    ],
+    "payer": "0x915926b61b61ef91ea00a46cccf6a85c289b32a1",
+    "managerInputBalance": 20531620657,
+    "payerInputBalance": 10448955,
+    "amountIn": 1000000,
+    "quoterOutput": 999800,
+    "execution": "success",
+    "receivedOutput": 999800,
+    "quoteMatchesExecution": true,
+    "hookCalls": 2,
+    "gasUsed": 578524
+  },
+  {
+    "file": "tempo_multihop_usdce_cusd_41115563.jsonl",
+    "block": 41115563,
+    "source": "0x20c000000000000000000000b9537d11c60e8b50",
+    "target": "0x20c0000000000000000000000520792dcccccccc",
+    "poolIds": [
+      "0x00cdb9b18686cc49430bd3ea24a241633baf4af84029a014f2be22ec5e295588",
+      "0x68d0800bf43bbf6ca33f5d92ce22b882c04b12194358b38ce91fa10b55e6ce57"
+    ],
+    "payer": "0x915926b61b61ef91ea00a46cccf6a85c289b32a1",
+    "managerInputBalance": 20531620657,
+    "payerInputBalance": 10448955,
+    "amountIn": 10448955,
+    "quoterOutput": 10446865,
+    "execution": "success",
+    "receivedOutput": 10446865,
+    "quoteMatchesExecution": true,
+    "hookCalls": 2,
+    "gasUsed": 583424
+  }
+]

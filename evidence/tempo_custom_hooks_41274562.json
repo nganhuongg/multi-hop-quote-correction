@@ -1,0 +1,26 @@
+[
+  {
+    "name": "KlikHook",
+    "address": "0x50995539e4afaca479bb59b0d795d94e0efea0cc",
+    "chainId": 4217,
+    "codeBytes": 10031
+  },
+  {
+    "name": "TokenHook",
+    "address": "0x8f6d72d343bc00e3ac07105dee7ec083e58f8044",
+    "chainId": 4217,
+    "codeBytes": 5923
+  },
+  {
+    "name": "CoalaHook",
+    "address": "0xa0698a98771683f526f281e003af6a6a20c7e0cc",
+    "chainId": 4217,
+    "codeBytes": 4504
+  },
+  {
+    "name": "GlueHook",
+    "address": "0xb216070c3509047ea597e2e626a29cea427a60c8",
+    "chainId": 4217,
+    "codeBytes": 23465
+  }
+]

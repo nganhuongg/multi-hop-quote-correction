@@ -1,0 +1,100 @@
+Compiling 1 files with Solc 0.8.29
+Solc 0.8.29 finished in 2.57s
+Compiler run successful!
+
+Ran 13 tests for test/QuoteRegression.t.sol:QuoteRegressionTest
+[PASS] test_A_single_no_hook() (gas: 556642)
+Logs:
+  full router gas: 111641
+  quote output: 999000
+  execution output: 999000
+
+[PASS] test_B_two_no_hooks() (gas: 957547)
+Logs:
+  full router gas: 143961
+  quote output: 998002
+  execution output: 998002
+
+[PASS] test_C_single_fee_hook_fee_off_on_same_snapshot() (gas: 1061825)
+Logs:
+  full router gas: 140966
+  quote output: 999000
+  execution output: 999000
+  full router gas: 191753
+  quote output: 998900
+  execution output: 998900
+
+[PASS] test_D_fee_hook_first() (gas: 1534884)
+Logs:
+  full router gas: 173287
+  quote output: 998002
+  execution output: 998002
+  full router gas: 231374
+  quote output: 997903
+  execution output: 997903
+
+[PASS] test_E_fee_hook_last() (gas: 1549083)
+Logs:
+  full router gas: 178615
+  quote output: 998002
+  execution output: 998002
+  full router gas: 229402
+  quote output: 997902
+  execution output: 997902
+
+[PASS] test_F_two_fee_hooks() (gas: 1854860)
+Logs:
+  full router gas: 202613
+  quote output: 998002
+  execution output: 998002
+  full router gas: 311488
+  quote output: 997803
+  execution output: 997803
+
+[PASS] test_G_single_tempo_direct_quote_and_router() (gas: 180487263)
+Logs:
+  full router gas: 230464
+  direct hook quote: 999000
+  execution output: 999000
+
+[PASS] test_H_tempo_first_explicit_manager_seed_diagnostic() (gas: 181006604)
+Logs:
+  explicit manager A seed: 1000000
+  full router gas: 235884
+  quote output: 998002
+  execution output: 998002
+
+[PASS] test_H_tempo_first_four_amounts_without_manager_seed() (gas: 182198898)
+Logs:
+  full router gas: 252884
+  amount: 1000
+  execution output, no manager seed: 998
+  full router gas: 403784
+  amount: 1000000
+  execution output, no manager seed: 998002
+  full router gas: 416793
+  amount: 10000000
+  execution output, no manager seed: 9891187
+  full router gas: 417192
+  amount: 25000000
+  execution output, no manager seed: 24366447
+
+[PASS] test_H_tempo_first_quoter_fails_but_router_succeeds() (gas: 180934001)
+Logs:
+  full router gas: 252984
+  first-leg candidate: 999000
+  composed candidate: 998002
+  execution output: 998002
+
+[PASS] test_H_tempo_last_quoter_and_router() (gas: 180990764)
+Logs:
+  manager A before quote: 29553011
+  full router gas: 258312
+  quote output: 998001
+  execution output: 998001
+
+[PASS] test_custom_hook_wrong_hook_data_fails_both_paths() (gas: 539682)
+[PASS] test_no_hook_genuine_insufficient_liquidity() (gas: 1200519)
+Suite result: ok. 13 passed; 0 failed; 0 skipped; finished in 1.34s (6.73s CPU time)
+
+Ran 1 test suite in 1.34s (1.34s CPU time): 13 tests passed, 0 failed, 0 skipped (13 total tests)
