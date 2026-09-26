@@ -20,11 +20,11 @@
       <section class="tab-panel active" id="problem-panel" role="tabpanel" aria-labelledby="problem-tab">
         <section class="intro page-width">
           <p class="plain-label">The route under investigation</p>
-          <h1>Why can a swap complete when its quote does not?</h1>
+          <h1>Quote-Execution Mismatch in Tempo Multi-Hop Swaps</h1>
           <p class="lede">
-            We examined one exact-input route from <strong>cUSD</strong> to <strong>USDT0</strong> through
-            <strong>PathUSD</strong>. A router needs a quote before execution so it can compare this route with other
-            candidates. If the quote produces no amount, this route cannot take part in that comparison.
+            <strong>The question</strong>: Can a swap system fail to simulate and estimate the output of a route that would execute successfully in real life and therefore be unable to compare it with other routes?
+
+            We tested different route lengths, hook types, input amounts, and liquidity conditions to find where quoting and execution diverge. The gap appeared in a Tempo multi-hop route, cUSD → PathUSD → USDT0: for certain inputs, V4Quoter returns no quote, even though the swap succeeds on a fork when the transaction prepares the input first.
           </p>
           <div class="main-route" aria-label="cUSD through PathUSD to USDT0 using two Tempo-connected pools">
             <div class="route-token">cUSD</div><span>&rarr;</span>
@@ -33,14 +33,10 @@
             <div class="route-pool"><strong>Pool 2</strong><small>Tempo hook<br />PathUSD / USDT0</small></div><span>&rarr;</span>
             <div class="route-token">USDT0</div>
           </div>
-          <div class="terms">
-            <p><strong>PoolManager</strong> is the shared Uniswap v4 contract that holds and accounts for pool tokens.</p>
-            <p><strong>Tempo hook</strong> is custom pool code that asks PoolManager for the input token, then uses Tempo's exchange.</p>
-          </div>
         </section>
 
         <section class="process-section page-width" aria-labelledby="process-title">
-          <h2 id="process-title">The two processes diverge before the first Tempo conversion</h2>
+          <h2 id="process-title">How the two paths diverge</h2>
           <p>The affected quote simulation can reach the hook before the required input balance is prepared. A funded transaction supplies the input first, then runs the same route.</p>
           <div class="process-comparison">
             <article class="process-card quote-process">
@@ -70,19 +66,22 @@
         </section>
 
         <section class="design page-width" aria-labelledby="design-title">
-          <h2 id="design-title">How we tested the explanation</h2>
-          <div class="hypothesis"><strong>Hypothesis</strong><p>The missing quote depends on when the hook's input becomes available, not on multi-hop routing or hooks in general.</p></div>
-          <div class="control-grid">
-            <article><strong>Ordinary pools</strong><p>One-hop and two-hop routes test whether multi-hop alone causes the failure.</p></article>
-            <article><strong>Fee hooks</strong><p>Two fee hooks test whether quote simulation skips custom hook calls.</p></article>
-            <article><strong>Hook position</strong><p>Moving the Tempo-style hook from the first pool to the last tests when its input becomes available.</p></article>
-            <article><strong>Small real swaps</strong><p>Small Tempo routes test whether the deployed route always fails. It does not.</p></article>
-            <article><strong>Balance boundary</strong><p>Inputs just above PoolManager's cUSD balance test whether failure follows that balance.</p></article>
-            <article><strong>Very large input</strong><p>A 1,000,000 cUSD input checks genuine Tempo Exchange illiquidity.</p></article>
-          </div>
-          <div class="count-note">
-            <div><strong>11</strong><span>dashboard cases</span></div><p>Presentation cases assembled from controlled and fork evidence.</p>
-            <div><strong>13</strong><span>local assertions</span></div><p>A separate count from the local test harness, not 13 dashboard cases.</p>
+          <h2 id="design-title">What we tested</h2>
+          <p class="test-intro">We varied <strong>route length, hook placement, input amount, and liquidity</strong> to separate possible explanations:</p>
+          <div class="test-table-wrap">
+            <table class="test-table">
+              <thead>
+                <tr><th>Cases</th><th>Purpose</th><th>Reported result</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>01-02: Ordinary pools, one and two hops</td><td>Is multi-hop routing itself the cause?</td><td>Quotes match execution.</td></tr>
+                <tr><td>03: Two fee hooks</td><td>Does the quoter skip custom hooks?</td><td>Both hooks run; quote matches execution.</td></tr>
+                <tr><td>04-05: Tempo-style hook first versus last</td><td>Does token availability at the hook matter?</td><td>The first-hop case fails without prepared input; the last-hop control works.</td></tr>
+                <tr><td>06-08: Deployed Tempo pools, small inputs</td><td>Do all real Tempo routes fail?</td><td>The documented small-input routes work.</td></tr>
+                <tr><td>09-10: Input above PoolManager's cUSD balance</td><td>Can funding order explain a failed quote?</td><td>V4Quoter fails; funded execution completes.</td></tr>
+                <tr><td>11: Extremely large input</td><td>Can we distinguish this gap from genuine illiquidity?</td><td>Both quote and execution reject the swap.</td></tr>
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -113,7 +112,7 @@
         <div class="empty-solution page-width">
           <p class="plain-label">Solution</p>
           <h1>No fix is presented yet.</h1>
-          <p>This section is reserved for an implemented quote method, its compatible funded execution plan, and before-and-after validation.</p>
+          <p>The controls rule out the broad claims that “multi-hop is broken” or “hooks cannot be quoted.” The reported gap is narrower: for certain amounts on this Tempo route, the quote simulation reaches a hook without the input balance that a funded transaction can prepare before execution.</p>
         </div>
       </section>
     </main>
