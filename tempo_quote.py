@@ -156,10 +156,31 @@ def resolve_route(source: str, target: str) -> RouteDescription:
     return RouteDescription(source, target, tuple(hops))
 
 
+def validate_route_continuity(route: RouteDescription) -> None:
+    """Check currency flow and direction without classifying the hook."""
+    if not route.hops or route.source not in TOKENS or route.target not in TOKENS:
+        raise UnsupportedRoute("route has no hops or uses unknown tokens")
+    current = route.source
+    for hop in route.hops:
+        if hop.source != current or hop.target not in TOKENS:
+            raise UnsupportedRoute("route token continuity is invalid")
+        key = hop.pool_key
+        in_address, out_address = TOKENS[current].lower(), TOKENS[hop.target].lower()
+        if ((key.currency0.lower(), key.currency1.lower()) not in
+                ((in_address, out_address), (out_address, in_address))):
+            raise UnsupportedRoute("pool key currencies do not match the route hop")
+        if hop.zero_for_one != (in_address == key.currency0.lower()):
+            raise UnsupportedRoute("swap direction does not match the pool key")
+        current = hop.target
+    if current != route.target:
+        raise UnsupportedRoute("route output token does not match the final hop")
+
+
 def validate_supported_route(route: RouteDescription, context: BlockContext) -> None:
     """Enforce the checked deployment, pool keys, direction, and route structure."""
     if context != HISTORICAL_CONTEXT:
         raise UnsupportedRoute("only the verified Tempo chain and block are supported")
+    validate_route_continuity(route)
     if (route.source, route.target) not in SUPPORTED:
         raise UnsupportedRoute(f"unsupported exact-input route: {route.source} -> {route.target}")
     expected = resolve_route(route.source, route.target)
@@ -265,8 +286,10 @@ def build_plan(candidate: dict, route: RouteDescription, amount: int,
 
 
 def standard_quote(client: TempoClient, route: RouteDescription, amount: int,
-                   context: BlockContext) -> dict:
-    validate_supported_route(route, context)
+                   context: BlockContext, payer: str = PAYER) -> dict:
+    if context != HISTORICAL_CONTEXT:
+        raise UnsupportedRoute("standard quote adapter is pinned to the verified block")
+    validate_route_continuity(route)
     path = "[" + ",".join(
         f"({TOKENS[hop.target]},{hop.pool_key.fee},{hop.pool_key.tick_spacing},"
         f"{hop.pool_key.hooks},{hop.hook_data})" for hop in route.hops
@@ -274,7 +297,7 @@ def standard_quote(client: TempoClient, route: RouteDescription, amount: int,
     data = _cast("calldata", "quoteExactInput((address,(address,uint24,int24,address,bytes)[],uint128))",
                  f"({TOKENS[route.source]},{path},{amount})")
     try:
-        raw = client.rpc("eth_call", [{"from": PAYER, "to": QUOTER, "data": data}, context.tag])
+        raw = client.rpc("eth_call", [{"from": payer, "to": QUOTER, "data": data}, context.tag])
         return {"status": "success", "amountOut": int(raw[2:66], 16), "gasEstimate": int(raw[66:130], 16)}
     except RpcError as exc:
         return {"status": "revert", "error": str(exc)}

@@ -16,4 +16,4 @@ evidence = ["requests>=2.31,<3"]
 tempo-quote-demo = "tempo_demo:main"
 
 [tool.setuptools]
-py-modules = ["tempo_quote", "tempo_demo"]
+py-modules = ["tempo_quote", "tempo_demo", "quote_dispatch"]
