@@ -1,0 +1,209 @@
+diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuoter.ts
+--- a/src/core/strategy/AggHookQuoter.ts
++++ b/src/core/strategy/AggHookQuoter.ts
+@@ -7,7 +7,7 @@
+  * zero and the V4Quoter reverts. This module calls the hook's own quote()
+  * function instead, which queries the external liquidity source directly.
+  *
+- * Phase 1: single-hop routes only.
++ * Supported exact-in Tempo two-hop routes are composed from direct hook quotes.
+  */
+ 
+ import {ethers} from 'ethers';
+@@ -25,6 +25,19 @@
+ import {isTempoAggHook} from '../../lib/helpers';
+ import {AGG_HOOK_QUOTE_ABI} from '../../../abis/AggHookQuoteABI';
+ 
++// Scope is deliberately limited to the deployed v1.0 pools verified on Tempo.
++const TEMPO_CHAIN_ID = 4217;
++const TEMPO_VERIFIED_BLOCK = 41183156;
++const TEMPO_HOOK = '0x7169a78a59f136876e724b648fbb339a42f46888';
++const PATH_USD = '0x20c0000000000000000000000000000000000000';
++const CUSD = '0x20c0000000000000000000000520792dcccccccc';
++const USDT0 = '0x20c00000000000000000000014f22ca97301eb73';
++const USDCE = '0x20c000000000000000000000b9537d11c60e8b50';
++const CUSD_POOL = '0x68d0800bf43bbf6ca33f5d92ce22b882c04b12194358b38ce91fa10b55e6ce57';
++const USDT0_POOL = '0x592553ff97e181f7d1df0d5a63937f5f11ae2d9e0964e22d193313c4506a9e22';
++const USDCE_POOL = '0x00cdb9b18686cc49430bd3ea24a241633baf4af84029a014f2be22ec5e295588';
++const eqAddress = (left: string, right: string): boolean => left.toLowerCase() === right.toLowerCase();
++
+ /**
+  * Returns true if the route is a single-hop through a Tempo aggregator hook pool.
+  */
+@@ -34,15 +47,41 @@
+   return pool !== undefined && isTempoAggHook(pool);
+ }
+ 
+-/**
+- * Partition routes into agg-hook single-hop routes and everything else.
+- *
+- * // TODO(ROUTE-1082): multi-hop routes where one leg is an agg hook pool
+- * // currently fall through to otherRoutes and will fail in the V4Quoter.
+- * // Phase 2 should detect these and compose hook.quote() with V4Quoter
+- * // calls serially.
+- */
+-export function partitionAggHookRoutes(routes: RouteBasic<Pool>[]): {
++/** Only the two previously fork-validated cUSD -> PathUSD -> USDT0/USDC.e routes. */
++export function isSupportedTempoMultiHopRoute(
++  route: RouteBasic<Pool>,
++  chainId?: number,
++  tradeType?: TradeType,
++  tokenIn?: CurrencyInfo,
++  blockNumber?: number
++): boolean {
++  if (chainId !== TEMPO_CHAIN_ID || tradeType !== TradeType.ExactIn ||
++      blockNumber !== TEMPO_VERIFIED_BLOCK || route.path.length !== 2 || !tokenIn) return false;
++  const [first, second] = route.path as V4Pool[];
++  if (!first || !second || typeof first.hooks !== 'string' ||
++      typeof second.hooks !== 'string' || !first.token0 || !first.token1 ||
++      !second.token0 || !second.token1 || typeof first.poolId !== 'string' ||
++      typeof second.poolId !== 'string') return false;
++  if (first.fee !== 500 || second.fee !== 500 ||
++      first.tickSpacing !== 10 || second.tickSpacing !== 10) return false;
++  const validTarget =
++    (eqAddress(second.poolId, USDT0_POOL) && eqAddress(second.token1.address, USDT0)) ||
++    (eqAddress(second.poolId, USDCE_POOL) && eqAddress(second.token1.address, USDCE));
++  return eqAddress(tokenIn.wrappedAddress.address, CUSD) &&
++    eqAddress(first.hooks, TEMPO_HOOK) && eqAddress(second.hooks, TEMPO_HOOK) &&
++    eqAddress(first.poolId, CUSD_POOL) && validTarget &&
++    eqAddress(first.token0.address, PATH_USD) && eqAddress(first.token1.address, CUSD) &&
++    eqAddress(second.token0.address, PATH_USD);
++}
++
++/**
++ * Partition only verified multi-hop Tempo routes into the direct-quote arm.
++ * Other routes retain their existing standard-quoter path.
++ */
++export function partitionAggHookRoutes(
++  routes: RouteBasic<Pool>[], chainId?: number, tradeType?: TradeType,
++  tokenIn?: CurrencyInfo, blockNumber?: number
++): {
+   aggHookRoutes: RouteBasic<Pool>[];
+   otherRoutes: RouteBasic<Pool>[];
+ } {
+@@ -50,7 +89,8 @@
+   const otherRoutes: RouteBasic<Pool>[] = [];
+ 
+   for (const route of routes) {
+-    if (isSingleHopTempoAggHookRoute(route)) {
++    if (isSingleHopTempoAggHookRoute(route) ||
++        isSupportedTempoMultiHopRoute(route, chainId, tradeType, tokenIn, blockNumber)) {
+       aggHookRoutes.push(route);
+     } else {
+       otherRoutes.push(route);
+@@ -61,11 +101,8 @@
+ }
+ 
+ /**
+- * Fetch quotes for single-hop aggregator hook routes by calling hook.quote() directly.
+- *
+- * IMPORTANT: This method only supports single-hop routes (exactly one pool per route).
+- * The swap direction (zeroForOne) is inferred from tokenIn and the pool's token0/token1.
+- * Multi-hop routes are not supported and will produce incorrect results.
++ * Fetch supported aggregator-hook quotes in route order at one block.
++ * Multi-hop results remain candidate quotes until full execution validation.
+  *
+  * @param chain       - The chain to query
+  * @param routes      - Single-hop agg hook routes (pre-filtered via partitionAggHookRoutes)
+@@ -94,7 +131,8 @@
+   rpcProviderMap: Map<ChainId, JsonRpcProvider>,
+   ctx: Context,
+   metricTags: string[],
+-  contractFactory: HookContractFactory = defaultContractFactory
++  contractFactory: HookContractFactory = defaultContractFactory,
++  blockNumber?: number
+ ): Promise<QuoteBasic[]> {
+   const provider = rpcProviderMap.get(chain.chainId as ChainId);
+   if (!provider) {
+@@ -133,34 +171,39 @@
+ 
+   const results = await Promise.allSettled(
+     routes.map(async route => {
+-      const pool = route.path[0] as V4Pool;
+-      const hookContract = getHookContract(pool.hooks);
+-      const poolId = pool.poolId;
+-
+-      // Determine swap direction: zeroForOne = tokenIn is token0
+-      const tokenInLower = tokenIn.wrappedAddress.address.toLowerCase();
+-      const token0Lower = pool.token0.address.toLowerCase();
+-      const zeroForOne = tokenInLower === token0Lower;
+-
+       // Calculate the amount for this route's percentage allocation
+       const routeAmount = (amount * BigInt(route.percentage)) / 100n;
+-
+-      // amountSpecified: negative for exact-in, positive for exact-out
+-      const amountSpecified =
+-        tradeType === TradeType.ExactIn
+-          ? -BigInt(routeAmount)
+-          : BigInt(routeAmount);
+-
+-      const amountUnspecified: ethers.BigNumber =
+-        await hookContract.callStatic.quote(
+-          zeroForOne,
+-          amountSpecified,
+-          poolId
+-        );
++      if (route.path.length > 1 &&
++          (tradeType !== TradeType.ExactIn || blockNumber === undefined)) {
++        throw new Error('multi-hop Tempo quotes require exact-in and a pinned block');
++      }
++      if (route.path.length > 1 && !isSupportedTempoMultiHopRoute(
++        route, chain.chainId, tradeType, tokenIn, blockNumber
++      )) {
++        throw new Error('unsupported Tempo multi-hop route');
++      }
++      let currentToken = tokenIn.wrappedAddress.address;
++      let currentAmount = routeAmount;
++      for (const pool of route.path as V4Pool[]) {
++        const zeroForOne = eqAddress(currentToken, pool.token0.address);
++        if (!zeroForOne && !eqAddress(currentToken, pool.token1.address)) {
++          throw new Error(`route token continuity failed at pool ${pool.poolId}`);
++        }
++        const amountSpecified =
++          tradeType === TradeType.ExactIn ? -currentAmount : currentAmount;
++        const hookContract = getHookContract(pool.hooks);
++        const quoted: ethers.BigNumber = blockNumber === undefined
++          ? await hookContract.callStatic.quote(zeroForOne, amountSpecified, pool.poolId)
++          : await hookContract.callStatic.quote(
++              zeroForOne, amountSpecified, pool.poolId, {blockTag: blockNumber}
++            );
++        currentAmount = quoted.toBigInt();
++        currentToken = zeroForOne ? pool.token1.address : pool.token0.address;
++      }
+ 
+       return new QuoteBasic(
+         route,
+-        amountUnspecified.toBigInt(),
++        currentAmount,
+         undefined, // no v3QuoterResponseDetails for hook quotes
+         undefined // gas details will be filled in later by the strategy
+       );
+diff --git a/src/core/strategy/DeepQuoteStrategy.ts b/src/core/strategy/DeepQuoteStrategy.ts
+--- a/src/core/strategy/DeepQuoteStrategy.ts
++++ b/src/core/strategy/DeepQuoteStrategy.ts
+@@ -165,9 +165,11 @@
+       }
+     }
+ 
+-    // Partition: single-hop aggregator hook routes are quoted via hook.quote()
+-    // directly, bypassing the V4Quoter which fails for these pools.
+-    const {aggHookRoutes, otherRoutes} = partitionAggHookRoutes(pctRoutes);
++    // Directly quote single-hop hooks and the verified exact-in Tempo two-hop
++    // routes. Other routes retain the standard quote-fetcher path.
++    const {aggHookRoutes, otherRoutes} = partitionAggHookRoutes(
++      pctRoutes, chain.chainId, tradeType, tokenInCurrencyInfo, blockNumber
++    );
+ 
+     const fetchQuotesStartTime = Date.now();
+     ctx.logger.debug('Starting fetchQuotes', {
+@@ -214,7 +216,9 @@
+             tokenInCurrencyInfo,
+             this.rpcProviderMap,
+             ctx,
+-            metricTags
++            metricTags,
++            undefined,
++            blockNumber
+           )
+         : Promise.resolve([] as QuoteBasic[]);
+     const standardQuotesStartTime = Date.now();

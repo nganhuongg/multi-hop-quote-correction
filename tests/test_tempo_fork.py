@@ -9,6 +9,8 @@ import os
 import unittest
 
 from tempo_quote import TempoClient, run_fork_case
+from tempo_quote import HISTORICAL_CONTEXT, resolve_route
+from quote_dispatch import RouteRequest, dispatch_quotes, validate_tempo_on_fork
 
 
 @unittest.skipUnless(os.getenv("TEMPO_FORK_RPC"), "set TEMPO_FORK_RPC to a local Anvil fork")
@@ -56,6 +58,29 @@ class RealTempoForkTests(unittest.TestCase):
         result = run_fork_case(self.client, "cUSD", "USDT0", 1_000_000_000_000)
         self.assertEqual(result["candidate"]["status"], "revert")
         self.assertEqual(result["execution"]["status"], "not-attempted")
+
+    def test_dispatch_candidate_is_retained_after_real_router_validation(self):
+        request = RouteRequest("verified-tempo", resolve_route("cUSD", "USDT0"), 25_000_000)
+        batch = dispatch_quotes(
+            self.client, [request], HISTORICAL_CONTEXT,
+            validator=lambda req, quote, block: validate_tempo_on_fork(self.client, req, quote, block),
+        )
+        self.assertEqual(batch["outcomes"][0]["quotePath"], "tempo_hook")
+        self.assertEqual(batch["outcomes"][0]["validationStatus"], "validated")
+        self.assertEqual(batch["comparisonInput"][0]["amountOut"], 24_997_499)
+        self.assertEqual(batch["comparisonInput"][0]["routeId"], "verified-tempo")
+
+    def test_single_hop_net_output_difference_is_not_compared(self):
+        request = RouteRequest("path-usd", resolve_route("cUSD", "PathUSD"), 1_000_000)
+        batch = dispatch_quotes(
+            self.client, [request], HISTORICAL_CONTEXT,
+            validator=lambda req, quote, block: validate_tempo_on_fork(self.client, req, quote, block),
+        )
+        outcome = batch["outcomes"][0]
+        self.assertEqual(outcome["quoteStatus"], "candidate")
+        self.assertEqual(outcome["validationStatus"], "failed")
+        self.assertIn("recipient balance delta", outcome["validationError"])
+        self.assertEqual(batch["comparisonInput"], [])
 
 
 if __name__ == "__main__":
