@@ -1,4 +1,4 @@
-# Tempo–Uniswap v4 multi-hop quote gap: test evidence and contribution direction
+# Tempo-Uniswap v4 multi-hop quote gap: test evidence and contribution direction
 
 **Investigation date:** 26 September 2026
 **Scope:** EXACT_IN. No production transaction was sent. No product logic was changed.
@@ -6,11 +6,11 @@
 
 ## 1. What was demonstrated
 
-At Tempo block **41,183,156** (chain ID **4217**), the Uniswap v4 PoolManager held **19,862,459 raw cUSD units** (**19.862459 cUSD**). For the real two-hop route **cUSD → PathUSD → USDT0**, V4Quoter succeeded at that exact input and failed at **19,862,460 raw units**, one smallest unit higher. The first Tempo hook requested the input through `PoolManager.take`; the PoolManager's cUSD transfer reverted before V4Quoter could produce its intentional `QuoteSwap` result. [F1][T1][C3–C5]
+At Tempo block **41,183,156** (chain ID **4217**), the Uniswap v4 PoolManager held **19,862,459 raw cUSD units** (**19.862459 cUSD**). For the real two-hop route **cUSD -> PathUSD -> USDT0**, V4Quoter succeeded at that exact input and failed at **19,862,460 raw units**, one smallest unit higher. The first Tempo hook requested the input through `PoolManager.take`; the PoolManager's cUSD transfer reverted before V4Quoter could produce its intentional `QuoteSwap` result. [F1][T1][C3-C5]
 
-On a fresh local fork of that block, setting **only the test payer's cUSD balance** from **5,249,475** to **30,000,000 raw units** allowed the deployed Universal Router to execute the same route when the V4 action order was **`SETTLE → SWAP_EXACT_IN → TAKE`**. At **25 cUSD** input it delivered **24.997499 USDT0**, exactly matching the two direct hook quotes, and used **571,946 gas** in `debug_traceCall`. With **`SWAP → SETTLE → TAKE`**, both V4Quoter and Universal Router failed above the PoolManager balance. Neither PoolManager nor Tempo Exchange was funded in the fork case. [F1][T1]
+On a fresh local fork of that block, setting **only the test payer's cUSD balance** from **5,249,475** to **30,000,000 raw units** allowed the deployed Universal Router to execute the same route when the V4 action order was **`SETTLE -> SWAP_EXACT_IN -> TAKE`**. At **25 cUSD** input it delivered **24.997499 USDT0**, exactly matching the two direct hook quotes, and used **571,946 gas** in `debug_traceCall`. With **`SWAP -> SETTLE -> TAKE`**, both V4Quoter and Universal Router failed above the PoolManager balance. Neither PoolManager nor Tempo Exchange was funded in the fork case. [F1][T1]
 
-This is a **missing quote for a conditionally executable route**, not a demonstrated incorrect amount in a successful quote. The condition matters: an application using only swap-before-settle calldata would also fail to execute it. Public UniRoute source contains an EXACT_IN swap-steps builder that emits settle-before-swap, but its production activation and route inclusion were not verified. [C1–C6]
+This is a **missing quote for a conditionally executable route**, not a demonstrated incorrect amount in a successful quote. The condition matters: an application using only swap-before-settle calldata would also fail to execute it. Public UniRoute source contains an EXACT_IN swap-steps builder that emits settle-before-swap, but its production activation and route inclusion were not verified. [C1-C6]
 
 ### Evidence labels
 
@@ -19,32 +19,32 @@ This is a **missing quote for a conditionally executable route**, not a demonstr
 | [L1] | 13 local Foundry tests, including mock Tempo Exchange and a diagnostic full-route router | Tempo production behavior or Universal Router integration |
 | [R1] | Read-only calls to real Tempo deployments at pinned historical blocks, real caller/allowance, and deployed Universal Router traces | That these synthetic multi-hop calldata were selected by production UniRoute |
 | [F1] | Fresh Tempo fork, real deployed contracts, payer-only TIP-20 balance adjustment, paired quote and full Universal Router calls from the same state | A transaction that a real, unfunded historical payer could have sent at 25 cUSD |
-| [C1–C6] | Behavior visible in the checked source files | Hidden configuration, missing modules, and production deployment behavior |
+| [C1-C6] | Behavior visible in the checked source files | Hidden configuration, missing modules, and production deployment behavior |
 | [T1] | Saved call traces, raw errors, and output-token transfers | Frequency or economic impact in user traffic |
 
 Token quantities below use decimal points. `cUSD`, `USDT0`, `USDC.e`, and `PathUSD` each returned **6 decimals** at block 41,274,562; their names alone are **not** treated as proof of a $1 price. Gas units are not converted to dollars or output tokens.
 
 ## 2. The full test inventory
 
-### 2.1 Local regression fixture — all 13/13 expected assertions passed [L1]
+### 2.1 Local regression fixture -- all 13/13 expected assertions passed [L1]
 
 `PASS` includes tests whose **expected result is a revert**. A/B/C are fixture tokens with 6 decimals. The Tempo hook implementation is real source code, but its external Tempo Exchange is a mock; the router is a diagnostic single-transaction router, not Universal Router. Gas is for that diagnostic router.
 
 | Test | Quote and full-route execution, raw output units | Router gas / error | Insight |
 |---|---|---|---|
-| A: A→B, no hook | 999,000 = 999,000 | 111,641 | One-hop control |
-| B: A→B→C, no hook | 998,002 = 998,002 | 143,961 | Multi-hop alone is not the failure |
-| C: A→B, fee hook off / on | 999,000 = 999,000 / 998,900 = 998,900 | 140,966 / 191,753 | Hook takes 100 output units when enabled |
+| A: A->B, no hook | 999,000 = 999,000 | 111,641 | One-hop control |
+| B: A->B->C, no hook | 998,002 = 998,002 | 143,961 | Multi-hop alone is not the failure |
+| C: A->B, fee hook off / on | 999,000 = 999,000 / 998,900 = 998,900 | 140,966 / 191,753 | Hook takes 100 output units when enabled |
 | D: fee hook at first hop, off / on | 998,002 = 998,002 / 997,903 = 997,903 | 173,287 / 231,374 | First-hop custom rule is applied |
 | E: fee hook at last hop, off / on | 998,002 = 998,002 / 997,902 = 997,902 | 178,615 / 229,402 | Last-hop custom rule is applied |
 | F: two fee hooks, off / on | 998,002 = 998,002 / 997,803 = 997,803 | 202,613 / 311,488 | Both hooks are called and each receives 100 output units |
-| G: A→B, Tempo hook | V4Quoter **reverts**; direct `hook.quote` 999,000 = execution 999,000 | 230,464 | Direct quote can avoid the PoolManager-balance dependency |
+| G: A->B, Tempo hook | V4Quoter **reverts**; direct `hook.quote` 999,000 = execution 999,000 | 230,464 | Direct quote can avoid the PoolManager-balance dependency |
 | H-first, explicit PM seed | 998,002 = 998,002 after **1,000,000 A minted to PM** | 235,884 | Artificial diagnostic; PM balance changes the outcome |
 | H-first, no PM seed, inputs 1,000 / 1m / 10m / 25m | V4Quoter **reverts** for all; execution 998 / 998,002 / 9,891,187 / 24,366,447 | 252,884 / 403,784 / 416,793 / 417,192 | Diagnostic router pays before swapping; not proof of production routing |
 | H-first, 1m A | V4Quoter **reverts**; two-leg candidate 998,002 = execution 998,002 | 252,984 | `take(A)` fails in the quote, while the paid-first full route succeeds |
 | H-last, 1m input | 998,001 = 998,001; PM already holds **29,553,011 A** | 258,312 | Hook location alone does not predict failure |
 | Fee hook with wrong `hookData` | Quote **reverts**; execution **reverts** | `WrongHookData` | A legitimate hook-condition failure |
-| No-hook, genuinely insufficient liquidity, input 10¹² | Quote **reverts**; execution **reverts** | `NotEnoughLiquidity` / `PartialFill(30452989,10¹²)` | Do not classify every failed quote as a missed trade |
+| No-hook, genuinely insufficient liquidity, input 10^12 | Quote **reverts**; execution **reverts** | `NotEnoughLiquidity` / `PartialFill(30452989,10^12)` | Do not classify every failed quote as a missed trade |
 
 The fee-hook off/on comparisons start from the same snapshot. The fixture does not merely compare two functions sharing a formula: traces show token fees actually transferred to the hooks. `trace_F.txt` shows both callbacks in V4Quoter and execution. `trace_H_first.txt` shows `PoolManager.take(A)` failing during quote; `trace_H_last.txt` shows a successful quote when PM already has the needed input. Sources: [REPORT.md](evidence/quote-harness/REPORT.md), [results.txt](evidence/quote-harness/results.txt), [test/QuoteRegression.t.sol](evidence/quote-harness/test/QuoteRegression.t.sol), and the named `trace_*.txt` files.
 
@@ -69,14 +69,14 @@ All multi-hop rows below use the actual Universal Router deployment via `eth_cal
 
 | Block | EXACT_IN route and amount | V4Quoter output | Router output | Difference | Full-call gas |
 |---:|---|---:|---:|---:|---:|
-| 41,183,156 | 1 cUSD → PathUSD → USDT0 | 0.999899 | 0.999899 | 0 | 323,356 |
-| 41,183,156 | 5.249475 cUSD → PathUSD → USDT0 | 5.248949 | 5.248949 | 0 | 328,256 |
-| 41,183,156 | 1 cUSD → PathUSD → USDC.e | 0.999800 | 0.999800 | 0 | 312,156 |
-| 41,183,156 | 5.249475 cUSD → PathUSD → USDC.e | 5.248425 | 5.248425 | 0 | 317,056 |
-| 41,115,563 | 1 USDC.e → PathUSD → USDT0 | 1.000000 | 1.000000 | 0 | 585,524 |
-| 41,115,563 | 10.448955 USDC.e → PathUSD → USDT0 | 10.448954 | 10.448954 | 0 | 590,424 |
-| 41,115,563 | 1 USDC.e → PathUSD → cUSD | 0.999800 | 0.999800 | 0 | 578,524 |
-| 41,115,563 | 10.448955 USDC.e → PathUSD → cUSD | 10.446865 | 10.446865 | 0 | 583,424 |
+| 41,183,156 | 1 cUSD -> PathUSD -> USDT0 | 0.999899 | 0.999899 | 0 | 323,356 |
+| 41,183,156 | 5.249475 cUSD -> PathUSD -> USDT0 | 5.248949 | 5.248949 | 0 | 328,256 |
+| 41,183,156 | 1 cUSD -> PathUSD -> USDC.e | 0.999800 | 0.999800 | 0 | 312,156 |
+| 41,183,156 | 5.249475 cUSD -> PathUSD -> USDC.e | 5.248425 | 5.248425 | 0 | 317,056 |
+| 41,115,563 | 1 USDC.e -> PathUSD -> USDT0 | 1.000000 | 1.000000 | 0 | 585,524 |
+| 41,115,563 | 10.448955 USDC.e -> PathUSD -> USDT0 | 10.448954 | 10.448954 | 0 | 590,424 |
+| 41,115,563 | 1 USDC.e -> PathUSD -> cUSD | 0.999800 | 0.999800 | 0 | 578,524 |
+| 41,115,563 | 10.448955 USDC.e -> PathUSD -> cUSD | 10.446865 | 10.446865 | 0 | 583,424 |
 
 At block 41,183,156, the payer held **5.249475 cUSD** and PM held **19.862459 cUSD**. At block 41,115,563, the USDC.e payer held **10.448955 USDC.e** and PM held **20,531.620657 USDC.e**. These balances explain why the unmodified quote simulation can get past the first hook for the tested amounts. [tempo_real_route_summary.json](evidence/quote-harness/tempo_real_route_summary.json) contains raw values, block, payer, pool IDs, trace hook counts, and gas for every row.
 
@@ -86,16 +86,16 @@ A separate **actual one-hop transaction** at parent block 41,183,156 exchanged *
 
 Fresh fork at **41,183,156**. Before any override, payer cUSD = **5,249,475**, PM cUSD = **19,862,459** raw units. `anvil_dealTIP20` then set **payer cUSD = 30,000,000**. No PM or Tempo Exchange balance was changed. Each quote and each full-route call was an independent read-only simulation from this same adjusted state; the script restored its snapshot afterward. Direct-hook quote for the first leg and then the second leg is only a **candidate** until compared with full execution, as done below.
 
-| Input cUSD | Direct hook 1 → composed output USDT0 | V4Quoter | Router `SWAP→SETTLE` | Router `SETTLE→SWAP`, received USDT0 | Prepay gas |
+| Input cUSD | Direct hook 1 -> composed output USDT0 | V4Quoter | Router `SWAP->SETTLE` | Router `SETTLE->SWAP`, received USDT0 | Prepay gas |
 |---:|---:|---:|---:|---:|---:|
-| 1.000000 | 0.999800 → 0.999899 | 0.999899 | success | 0.999899 | 571,922 |
-| 19.000000 | 18.996200 → 18.998099 | 18.998099 | success | 18.998099 | 571,946 |
-| **19.862459** | 19.858486 → 19.860472 | 19.860472 | success | 19.860472 | 571,946 |
-| **19.862460** | 19.858487 → 19.860473 | **revert** | **revert** | **19.860473** | 571,946 |
-| 20.000000 | 19.996000 → 19.997999 | **revert** | **revert** | **19.997999** | 571,922 |
-| 25.000000 | 24.995000 → 24.997499 | **revert** | **revert** | **24.997499** | 571,946 |
+| 1.000000 | 0.999800 -> 0.999899 | 0.999899 | success | 0.999899 | 571,922 |
+| 19.000000 | 18.996200 -> 18.998099 | 18.998099 | success | 18.998099 | 571,946 |
+| **19.862459** | 19.858486 -> 19.860472 | 19.860472 | success | 19.860472 | 571,946 |
+| **19.862460** | 19.858487 -> 19.860473 | **revert** | **revert** | **19.860473** | 571,946 |
+| 20.000000 | 19.996000 -> 19.997999 | **revert** | **revert** | **19.997999** | 571,922 |
+| 25.000000 | 24.995000 -> 24.997499 | **revert** | **revert** | **24.997499** | 571,946 |
 
-The threshold is **one raw unit above the PM balance**. At 25 cUSD the quoter's failure is a real transfer failure: trace path `V4Quoter → PoolManager.swap → TempoExchangeAggregator.beforeSwap → PoolManager.take(cUSD) → TIP-20.transfer(revert)`. It is **not** V4Quoter's intentional `QuoteSwap` revert, which is the mechanism it uses to return a successful quote. Swap-before-settle Universal Router fails at the same transfer. Prepay execution calls **both hooks**, then transfers **24,997,499 raw USDT0 units** to the payer. [tempo_fork_usecases_clean_41183156.jsonl](evidence/quote-harness/tempo_fork_usecases_clean_41183156.jsonl), [tempo_fork_trace_25m_clean.json](evidence/quote-harness/tempo_fork_trace_25m_clean.json), [QuoterRevert.sol](../uniswap-v4-study/v4-periphery/src/libraries/QuoterRevert.sol).
+The threshold is **one raw unit above the PM balance**. At 25 cUSD the quoter's failure is a real transfer failure: trace path `V4Quoter -> PoolManager.swap -> TempoExchangeAggregator.beforeSwap -> PoolManager.take(cUSD) -> TIP-20.transfer(revert)`. It is **not** V4Quoter's intentional `QuoteSwap` revert, which is the mechanism it uses to return a successful quote. Swap-before-settle Universal Router fails at the same transfer. Prepay execution calls **both hooks**, then transfers **24,997,499 raw USDT0 units** to the payer. [tempo_fork_usecases_clean_41183156.jsonl](evidence/quote-harness/tempo_fork_usecases_clean_41183156.jsonl), [tempo_fork_trace_25m_clean.json](evidence/quote-harness/tempo_fork_trace_25m_clean.json), [QuoterRevert.sol](../uniswap-v4-study/v4-periphery/src/libraries/QuoterRevert.sol).
 
 **Valid failure control:** with **1,000,000 cUSD** input (1,000,000,000,000 raw units), the payer alone was funded on the fork. Direct first-leg `hook.quote` returned `InsufficientLiquidity()` (`0xbb55fd27`), and prepay Universal Router execution reverted at the **Tempo Exchange** with the same selector. This is an external-liquidity failure, not the PM-balance quote gap. [tempo_fork_trace_illiquid_clean.json](evidence/quote-harness/tempo_fork_trace_illiquid_clean.json).
 
@@ -103,16 +103,16 @@ The threshold is **one raw unit above the PM balance**. At 25 cUSD the quoter's 
 
 ### 2.5 Supplementary probes, including cases outside this EXACT_IN decision
 
-At block **41,274,562**, a read-only direct-hook probe sampled **80** combinations across **five registered pools, three hook addresses, two directions, four amounts, and EXACT_IN/EXACT_OUT**. For EXACT_IN, **38/40** direct hook calls succeeded and all 38 returned the same raw amount as the corresponding Tempo Exchange quote; the two failures were the cUSD pool at **10¹² raw units** in opposite directions. EXACT_OUT also had **38/40** successful direct hook calls, but only 8 of those raw hook values equaled the Exchange's raw quote. Buffering and execution were **not** analyzed for EXACT_OUT here, so the unequal values are not classified as errors. Four separate historical one-hop Universal Router transactions replayed successfully with original caller/calldata at their parent blocks; the cUSD example above is one of them. [../tempo_probe_41274562.jsonl](evidence/tempo_probe_41274562.jsonl), [../tempo_replay_4.jsonl](evidence/tempo_replay_4.jsonl).
+At block **41,274,562**, a read-only direct-hook probe sampled **80** combinations across **five registered pools, three hook addresses, two directions, four amounts, and EXACT_IN/EXACT_OUT**. For EXACT_IN, **38/40** direct hook calls succeeded and all 38 returned the same raw amount as the corresponding Tempo Exchange quote; the two failures were the cUSD pool at **10^12 raw units** in opposite directions. EXACT_OUT also had **38/40** successful direct hook calls, but only 8 of those raw hook values equaled the Exchange's raw quote. Buffering and execution were **not** analyzed for EXACT_OUT here, so the unequal values are not classified as errors. Four separate historical one-hop Universal Router transactions replayed successfully with original caller/calldata at their parent blocks; the cUSD example above is one of them. [../tempo_probe_41274562.jsonl](evidence/tempo_probe_41274562.jsonl), [../tempo_replay_4.jsonl](evidence/tempo_replay_4.jsonl).
 
 A further **50 V4Quoter single-hop probes** at block 41,274,562 returned **28 values and 22 reverts** across three tested aggregator pools and two discovered ordinary v4 pools. The ordinary PathUSD/USDC.e and PathUSD/cbBTC pools each reverted in **10/10 deliberately sampled direction/amount calls**; no matching full execution was established for those pools, so they cannot serve as validated price alternatives. These are selected probes, **not** an estimate of failure frequency in user traffic. [tempo_real_probe_41274562.jsonl](evidence/quote-harness/tempo_real_probe_41274562.jsonl).
 
 ## 3. Mechanism in checked source
 
-1. [AggHookQuoter.ts](../uniswap-v4-study/uniroute-public/src/core/strategy/AggHookQuoter.ts) accepts a Tempo aggregator hook route for direct `hook.quote` only if `route.path.length === 1`; its `ROUTE-1082` TODO explicitly names multi-hop. [DeepQuoteStrategy.ts](../uniswap-v4-study/uniroute-public/src/core/strategy/DeepQuoteStrategy.ts) partitions such routes and sends the rest to its standard quote fetcher. This is a **code-path conclusion**, not proof that a particular route entered production's candidate universe. The public checkout lacks `src/lib/helpers.ts` (the `isTempoAggHook` implementation), `src/lib/methodParameters.ts`, and `src/models`, so the full service and active recognition set could not be run from this snapshot. [C1–C2]
+1. [AggHookQuoter.ts](../uniswap-v4-study/uniroute-public/src/core/strategy/AggHookQuoter.ts) accepts a Tempo aggregator hook route for direct `hook.quote` only if `route.path.length === 1`; its `ROUTE-1082` TODO explicitly names multi-hop. [DeepQuoteStrategy.ts](../uniswap-v4-study/uniroute-public/src/core/strategy/DeepQuoteStrategy.ts) partitions such routes and sends the rest to its standard quote fetcher. This is a **code-path conclusion**, not proof that a particular route entered production's candidate universe. The public checkout lacks `src/lib/helpers.ts` (the `isTempoAggHook` implementation), `src/lib/methodParameters.ts`, and `src/models`, so the full service and active recognition set could not be run from this snapshot. [C1-C2]
 2. [V4Quoter.sol](../uniswap-v4-study/v4-periphery/src/lens/V4Quoter.sol) loops through every `PathKey`, calls `PoolManager.swap` with that hop's `hookData`, and intentionally reverts with a quote value only after swaps succeed. [BaseV4Quoter.sol](../uniswap-v4-study/v4-periphery/src/base/BaseV4Quoter.sol) bubbles a real swap failure. Multi-hop does **not** skip a custom hook. Ethers `callStatic` here is an off-chain simulated call; it does not imply that an EVM `STATICCALL` prevents the hook from executing inside the simulation. [C3]
-3. [TempoExchangeAggregator.sol](../uniswap-v4-study/v4-hooks-public/src/aggregator-hooks/implementations/TempoExchange/TempoExchangeAggregator.sol) calls `poolManager.take(input, hook, amount)` **before** `tempoExchange.swapExactAmountIn` on EXACT_IN. [PoolManager.sol](../uniswap-v4-study/v4-core/src/PoolManager.sol) must transfer the requested input; a user's wallet balance does not automatically become a PoolManager balance. The hook and `take` are behaving as coded; the tested mismatch is between quote simulation and the viable pre-funded execution sequence. [C4–C5]
-4. A useful integration path already exists in public code: [SwapStepsFactory.ts](../uniswap-v4-study/uniroute-public/src/core/swap/SwapStepsFactory.ts) builds EXACT_IN v4 actions as **`SETTLE(input, explicit amount) → SWAP_EXACT_IN → TAKE(output)`**, including a multi-hop `PathKey[]`; [SwapStepsFactory.test.ts](../uniswap-v4-study/uniroute-public/src/core/swap/SwapStepsFactory.test.ts) asserts that order. [SwapStepsBuilder.ts](../uniswap-v4-study/uniroute-public/src/core/swap/SwapStepsBuilder.ts) passes the steps to `SwapRouter.encodeSwaps`. But [UniRouteBL.ts](../uniswap-v4-study/uniroute-public/src/core/UniRouteBL.ts) gates this path on `universalRouterSwapsteps` and has a legacy fallback. Historical Tempo calldata inspected here used **`SWAP → SETTLE → TAKE`**. The public builder therefore makes reuse plausible; it does **not** establish which mode production requests use or whether its final calldata passes the 25-cUSD case. [C6][R1]
+3. [TempoExchangeAggregator.sol](../uniswap-v4-study/v4-hooks-public/src/aggregator-hooks/implementations/TempoExchange/TempoExchangeAggregator.sol) calls `poolManager.take(input, hook, amount)` **before** `tempoExchange.swapExactAmountIn` on EXACT_IN. [PoolManager.sol](../uniswap-v4-study/v4-core/src/PoolManager.sol) must transfer the requested input; a user's wallet balance does not automatically become a PoolManager balance. The hook and `take` are behaving as coded; the tested mismatch is between quote simulation and the viable pre-funded execution sequence. [C4-C5]
+4. A useful integration path already exists in public code: [SwapStepsFactory.ts](../uniswap-v4-study/uniroute-public/src/core/swap/SwapStepsFactory.ts) builds EXACT_IN v4 actions as **`SETTLE(input, explicit amount) -> SWAP_EXACT_IN -> TAKE(output)`**, including a multi-hop `PathKey[]`; [SwapStepsFactory.test.ts](../uniswap-v4-study/uniroute-public/src/core/swap/SwapStepsFactory.test.ts) asserts that order. [SwapStepsBuilder.ts](../uniswap-v4-study/uniroute-public/src/core/swap/SwapStepsBuilder.ts) passes the steps to `SwapRouter.encodeSwaps`. But [UniRouteBL.ts](../uniswap-v4-study/uniroute-public/src/core/UniRouteBL.ts) gates this path on `universalRouterSwapsteps` and has a legacy fallback. Historical Tempo calldata inspected here used **`SWAP -> SETTLE -> TAKE`**. The public builder therefore makes reuse plausible; it does **not** establish which mode production requests use or whether its final calldata passes the 25-cUSD case. [C6][R1]
 
 ## 4. Problem statement and contribution direction
 
@@ -133,7 +133,7 @@ A further **50 V4Quoter single-hop probes** at block 41,274,562 returned **28 va
 
 - Whether the tested hook address is in production `isTempoAggHook` recognition and whether these pools reach route comparison. Public helper/allowlist data are incomplete.
 - Whether production enables `universalRouterSwapsteps` for these requests, uses the legacy builder, or falls back after an encoding error.
-- A validated direct/alternative cUSD→USDT0 route at the same block; therefore **no after-gas advantage in tokens or percent** was measured.
+- A validated direct/alternative cUSD->USDT0 route at the same block; therefore **no after-gas advantage in tokens or percent** was measured.
 - Production request frequency, user exposure, and realized loss. The deliberately chosen 1/19/threshold/20/25-cUSD amounts are **not** a user-traffic sample. The aggregate of benchmark differences is **not** money lost.
 - A liquid mixed route with a Tempo hook at one hop and an ordinary v4 pool at the other. The four real two-hop routes tested here use the same Tempo hook deployment on **both** hops.
 
