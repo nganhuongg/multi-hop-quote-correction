@@ -74,7 +74,7 @@ const cases = [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Tempo pool", sub: "cUSD / PathUSD" },
       { type: "token", label: "PathUSD" },
     ],
-    comparison: { quoteStatus: "Completed", quoteAmount: "0.999800 PathUSD gross", executionStatus: "Completed", executionAmount: "0.999800 PathUSD gross", matched: true, note: "The payer-recipient's wallet rises by 0.999479 PathUSD because the receipt charges it 0.000321 PathUSD for gas. A separate recipient receives the full 0.999800. The conservative validator excludes this candidate until ranking accounts for gas exactly once." },
+    comparison: { quoteStatus: "Completed", quoteAmount: "0.999800 PathUSD gross", executionStatus: "Completed", executionAmount: "0.999800 PathUSD gross", matched: true, note: "The payer-recipient's wallet rises by 0.999479 PathUSD because the receipt charges it 0.000321 PathUSD for gas. A separate recipient receives the full 0.999800. The validator now admits the gross swap output after reconciling the receipt-proven gas payment; ranking must charge that gas only once." },
   },
   {
     id: "F02", group: "fork", filter: "matched", hop: "multi-hop",

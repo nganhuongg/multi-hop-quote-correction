@@ -10,7 +10,7 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
   */
  
  import {ethers} from 'ethers';
-@@ -25,6 +25,19 @@
+@@ -25,6 +25,21 @@
  import {isTempoAggHook} from '../../lib/helpers';
  import {AGG_HOOK_QUOTE_ABI} from '../../../abis/AggHookQuoteABI';
  
@@ -25,12 +25,14 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 +const CUSD_POOL = '0x68d0800bf43bbf6ca33f5d92ce22b882c04b12194358b38ce91fa10b55e6ce57';
 +const USDT0_POOL = '0x592553ff97e181f7d1df0d5a63937f5f11ae2d9e0964e22d193313c4506a9e22';
 +const USDCE_POOL = '0x00cdb9b18686cc49430bd3ea24a241633baf4af84029a014f2be22ec5e295588';
++const TEMPO_MANAGER = '0x33620f62c5b9b2086dd6b62f4a297a9f30347029';
++const TEMPO_FEE_COLLECTOR = '0xfeec000000000000000000000000000000000000';
 +const eqAddress = (left: string, right: string): boolean => left.toLowerCase() === right.toLowerCase();
 +
  /**
   * Returns true if the route is a single-hop through a Tempo aggregator hook pool.
   */
-@@ -34,15 +47,41 @@
+@@ -34,15 +49,41 @@
    return pool !== undefined && isTempoAggHook(pool);
  }
  
@@ -79,7 +81,7 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
    aggHookRoutes: RouteBasic<Pool>[];
    otherRoutes: RouteBasic<Pool>[];
  } {
-@@ -50,7 +89,8 @@
+@@ -50,7 +91,8 @@
    const otherRoutes: RouteBasic<Pool>[] = [];
  
    for (const route of routes) {
@@ -89,7 +91,7 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
        aggHookRoutes.push(route);
      } else {
        otherRoutes.push(route);
-@@ -61,11 +101,8 @@
+@@ -61,11 +103,8 @@
  }
  
  /**
@@ -103,7 +105,7 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
   *
   * @param chain       - The chain to query
   * @param routes      - Single-hop agg hook routes (pre-filtered via partitionAggHookRoutes)
-@@ -82,6 +119,62 @@
+@@ -82,6 +121,102 @@
    provider: JsonRpcProvider
  ) => ethers.Contract;
  
@@ -129,7 +131,7 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 +}
 +
 +export interface TempoExecutionValidation {
-+  status: 'success' | 'failed';
++  status: 'success' | 'failed' | 'indeterminate';
 +  routeKey: string;
 +  amountIn: bigint;
 +  chainId: number;
@@ -138,6 +140,16 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 +  planKey: string;
 +  grossOutputTransfer: bigint;
 +  recipientDelta: bigint;
++  feePayer?: string;
++  feeToken?: string;
++  feeTokenTransfers?: TempoTokenTransfer[];
++  outputTokenTransfers: TempoTokenTransfer[];
++}
++
++export interface TempoTokenTransfer {
++  from: string;
++  to: string;
++  amount: bigint;
 +}
 +
 +/** The private service must implement both operations against the same state. */
@@ -163,10 +175,40 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 +    })].join('|');
 +}
 +
++/** Reconcile the executed swap transfer with a receipt-proven gas charge. */
++export function tempoRecipientSwapOutput(
++  validation: TempoExecutionValidation,
++  plan: TempoExecutionPlan,
++  outputToken: string
++): bigint {
++  const recipient = plan.recipient.toLowerCase();
++  const swaps = (validation.outputTokenTransfers ?? []).filter(transfer =>
++    eqAddress(transfer.from, TEMPO_MANAGER) && eqAddress(transfer.to, recipient)
++  );
++  if (swaps.length !== 1 || swaps[0]!.amount !== validation.grossOutputTransfer) {
++    throw new Error('executed swap output transfer is missing or ambiguous');
++  }
++  let outputTokenGasPaid = 0n;
++  if (validation.feePayer && validation.feeToken &&
++      eqAddress(validation.feePayer, recipient) && eqAddress(validation.feeToken, outputToken)) {
++    const fees = validation.feeTokenTransfers ?? [];
++    if (fees.length !== 1 || !eqAddress(fees[0]!.from, recipient) ||
++        !eqAddress(fees[0]!.to, TEMPO_FEE_COLLECTOR) || fees[0]!.amount <= 0n) {
++      throw new Error('recipient gas payment is not isolated');
++    }
++    outputTokenGasPaid = fees[0]!.amount;
++  }
++  const swapOutput = validation.recipientDelta + outputTokenGasPaid;
++  if (swapOutput !== swaps[0]!.amount) {
++    throw new Error('recipient output token flows do not reconcile');
++  }
++  return swapOutput;
++}
++
  const defaultContractFactory: HookContractFactory = (hookAddress, provider) =>
    new ethers.Contract(hookAddress, AGG_HOOK_QUOTE_ABI, provider);
  
-@@ -94,7 +187,9 @@
+@@ -94,7 +229,9 @@
    rpcProviderMap: Map<ChainId, JsonRpcProvider>,
    ctx: Context,
    metricTags: string[],
@@ -177,7 +219,7 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
  ): Promise<QuoteBasic[]> {
    const provider = rpcProviderMap.get(chain.chainId as ChainId);
    if (!provider) {
-@@ -133,34 +228,69 @@
+@@ -133,34 +270,72 @@
  
    const results = await Promise.allSettled(
      routes.map(async route => {
@@ -251,6 +293,9 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 +      };
 +      const plan = await admissionBoundary.buildPlan(request);
 +      const validation = await admissionBoundary.validate(request, plan);
++      if (validation.status === 'indeterminate') {
++        throw new Error('Tempo execution validation indeterminate');
++      }
 +      if (validation.status !== 'success' ||
 +          validation.routeKey !== request.routeKey ||
 +          validation.amountIn !== request.amountIn ||
@@ -259,7 +304,7 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 +          validation.blockHash.toLowerCase() !== request.blockHash.toLowerCase() ||
 +          validation.planKey !== tempoPlanKey(plan) ||
 +          validation.grossOutputTransfer !== currentAmount ||
-+          validation.recipientDelta !== currentAmount) {
++          tempoRecipientSwapOutput(validation, plan, currentToken) !== currentAmount) {
 +        throw new Error('Tempo execution validation did not match the candidate and plan');
 +      }
  

@@ -10,7 +10,8 @@ import unittest
 
 from tempo_quote import PAYER, TOKENS, TempoClient, run_fork_case
 from tempo_quote import HISTORICAL_CONTEXT, resolve_route
-from quote_dispatch import RouteRequest, dispatch_quotes, validate_tempo_on_fork
+from quote_dispatch import (RouteRequest, dispatch_quotes,
+                            reconcile_execution_output, validate_tempo_on_fork)
 
 
 @unittest.skipUnless(os.getenv("TEMPO_FORK_RPC"), "set TEMPO_FORK_RPC to a local Anvil fork")
@@ -73,6 +74,11 @@ class RealTempoForkTests(unittest.TestCase):
         self.assertEqual(execution["payerOutputBalanceBefore"], 39_805)
         self.assertEqual(execution["payerOutputBalanceAfter"], 39_473)
         self.assertEqual(sum(log["amount"] for log in execution["feeTokenTransfers"]), 332)
+        reconciled = reconcile_execution_output(
+            execution, result["plan"], TOKENS["PathUSD"], result["candidate"]["amountOut"])
+        self.assertEqual(reconciled["status"], "success")
+        self.assertEqual(reconciled["recipientSwapOutput"], 999_800)
+        self.assertEqual(reconciled["gasPaidInOutputByRecipient"], 0)
 
     def test_real_exchange_illiquidity_is_rejected(self):
         result = run_fork_case(self.client, "cUSD", "USDT0", 1_000_000_000_000)
@@ -89,8 +95,9 @@ class RealTempoForkTests(unittest.TestCase):
         self.assertEqual(batch["outcomes"][0]["validationStatus"], "validated")
         self.assertEqual(batch["comparisonInput"][0]["amountOut"], 24_997_499)
         self.assertEqual(batch["comparisonInput"][0]["routeId"], "verified-tempo")
+        self.assertEqual(batch["comparisonInput"][0]["gasPaidInOutputByRecipient"], 0)
 
-    def test_single_hop_net_output_difference_is_not_compared(self):
+    def test_single_hop_pathusd_gas_is_reconciled_and_compared(self):
         request = RouteRequest("path-usd", resolve_route("cUSD", "PathUSD"), 1_000_000)
         batch = dispatch_quotes(
             self.client, [request], HISTORICAL_CONTEXT,
@@ -98,9 +105,11 @@ class RealTempoForkTests(unittest.TestCase):
         )
         outcome = batch["outcomes"][0]
         self.assertEqual(outcome["quoteStatus"], "candidate")
-        self.assertEqual(outcome["validationStatus"], "failed")
-        self.assertIn("recipient balance delta", outcome["validationError"])
-        self.assertEqual(batch["comparisonInput"], [])
+        self.assertEqual(outcome["validationStatus"], "validated")
+        self.assertEqual(outcome["recipientDelta"], 999_479)
+        self.assertEqual(outcome["gasPaidInOutputByRecipient"], 321)
+        self.assertEqual(batch["comparisonInput"][0]["amountOut"], 999_800)
+        self.assertEqual(batch["comparisonInput"][0]["recipientDelta"], 999_479)
 
 
 if __name__ == "__main__":

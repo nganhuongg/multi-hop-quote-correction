@@ -37,22 +37,37 @@ the same gas cost again from that balance increase would double-count it.
 
 ## Candidate admission
 
-The standalone dispatcher treats the direct hook amount as a candidate. A
-candidate reaches `comparisonInput` only after a full Universal Router
-transaction succeeds from the pinned fork and its actual recipient balance
-increase equals the candidate amount. This admits the verified 25-cUSD
-two-hop USDT0 route. It deliberately withholds the payer-recipient PathUSD
-control because its balance increase includes a fee paid in the output token.
-The hook quote itself remains correct as a gross swap output. The comparison
-gate is conservative until the ranking model explicitly represents both gross
-output and gas paid in that same token; it must then account for the fee once.
+The standalone dispatcher treats the direct hook amount as a candidate. After
+the full Universal Router transaction, it reads the **executed receipt's**
+PoolManager-to-recipient output-token `Transfer` and compares that actual swap
+transfer with the hook quote. It records the recipient wallet's balance delta
+separately. Only if the receipt identifies the same recipient as `feePayer`,
+the output token as `feeToken`, and one actual transfer to the observed Tempo
+fee collector does it add that measured gas payment back to the wallet delta
+to recover swap output. There is no fixed 321-unit adjustment or assumed gas
+token. The reported `amountOut` remains the **gross swap output**;
+`recipientDelta` already includes gas paid by that wallet, and
+`gasPaidInOutputByRecipient` is reported separately so a ranking layer can
+charge gas **once**.
+
+The payer-recipient PathUSD control is now admitted: **999,800** gross swap
+output = **999,479** wallet delta + **321** receipt-proven PathUSD gas. With a
+different recipient, that recipient receives the full **999,800** while the
+payer separately pays **332** PathUSD gas. A gas payment in another token needs
+no output-token adjustment; that branch is covered by a boundary test, not by
+a deployed Tempo fork case. If transfer or fee evidence is missing, ambiguous,
+or fails to explain the wallet delta, validation is **indeterminate** and the
+candidate stays out of comparison. An executed swap transfer below the quote
+is a real validation failure and is rejected.
 
 The proposed UniRoute patch must enforce the same execution-admission rule
 before a specialized candidate joins the strategy's eligible quote set.
 The public checkout lacks the private service wiring needed to build and
 validate the exact final plan. Its `TempoAdmissionBoundary` requires a complete
 plan and a validation result bound to the route key, raw input amount,
-chain/block number and hash, full plan key, gross output and recipient delta.
+chain/block number and hash, full plan key, executed gross output and
+reconciled recipient swap output. The public patch also requires receipt
+transfer evidence before compensating an output-token gas payment.
 It emits no specialized `QuoteBasic` when that boundary is absent, execution
 fails, or any field differs. The standalone dispatcher also binds successful
 validation to the route, amount, block and calldata digest before adding a
@@ -64,8 +79,10 @@ PoolManager and Universal Router: standard quote reverts, the composed quote
 is **24,997,499 raw USDT0**, the recipient receives **24,997,499**, and the
 transaction uses **316,216 receipt gas**. The saved
 [dispatch result](demo-results/dispatch_25_cusd.json) now includes the
-execution-plan digest. There is no validated competing production route in
-this fixture, so no price improvement is claimed.
+execution-plan digest. The
+[PathUSD dispatch result](demo-results/dispatch_pathusd_1_cusd.json) shows the
+corrected admission. There is no validated competing production route in this
+fixture, so no price improvement is claimed.
 
 ## Reproduction
 

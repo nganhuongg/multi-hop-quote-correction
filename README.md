@@ -8,15 +8,15 @@ This standalone Python adapter restores a **candidate exact-input quote** for th
 sends only the explicitly verified Tempo hook shapes to `quote_candidate`,
 leaves ordinary no-hook routes with the normal quoter adapter, and rejects
 unverified custom hooks. Each outcome records quote and validation status
-separately; only complete Router-validated candidates whose recipient balance
-delta matches the candidate and whose validation binds the route, amount,
-block and execution-plan digest enter `comparisonInput`. The one-hop PathUSD
-control remains a candidate but is excluded because its payer-recipient's
-balance increase includes a 321-raw-PathUSD gas payment, despite the gross
-transfer matching the hook quote. The validator has not modeled that gas
-payment separately, so it conservatively requires equality with the wallet
-balance delta. An ordinary-quoter failure never
-triggers a Tempo retry.
+separately; only complete Router-validated candidates whose **executed swap
+transfer** matches the quote, whose recipient token flows reconcile, and whose
+validation binds the route, amount, block and execution-plan digest enter
+`comparisonInput`. The one-hop PathUSD control now qualifies: the receipt
+proves a 999,800 gross transfer and a separate 321-raw-PathUSD gas payment by
+the payer-recipient, explaining its 999,479 wallet-balance increase. The gas
+amount comes from the actual receipt, not a fixed adjustment. If those flows
+cannot be separated, validation is indeterminate. An ordinary-quoter failure
+never triggers a Tempo retry.
 The ordinary quoter and validator in the comparison unit test are **boundary
 mocks**, so that test proves dispatch and candidate retention, not an economic
 advantage over a real competing route.
@@ -30,6 +30,8 @@ made 35 local RPC calls; this includes a separate standard quote and a repeated
 candidate quote during execution validation, so it is not a production latency
 benchmark. See [`demo-results/dispatch_25_cusd.json`](demo-results/dispatch_25_cusd.json).
 
+The [PathUSD dispatch result](demo-results/dispatch_pathusd_1_cusd.json)
+records gross output, wallet delta and gas paid in the output token separately.
 The public TypeScript quote-dispatch change is supplied as a reproducible
 [`patch`](patches/README.md) against UniRoute commit
 `2961efa8d44b80d353ee3af82cf868702bb6ab6a`. It passes an isolated

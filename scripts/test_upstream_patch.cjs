@@ -88,19 +88,26 @@ try {
   const metrics = {count: async () => {}, dist: async () => {}};
   const ctx = {logger: {warn: () => {}, debug: () => {}}, metrics};
   const blockHash = '0x' + 'ab'.repeat(32);
+  const manager = '0x33620f62c5b9b2086dd6b62f4a297a9f30347029';
+  const feeCollector = '0xfeec000000000000000000000000000000000000';
   const plan = {to: '0xrouter', from: '0xpayer', data: '0x1234', value: '0x0',
     recipient: '0xpayer', deadline: 1790346234, minimumOutput: 24872511n};
-  const boundary = (overrides = {}) => ({
+  const boundary = (overrides = {}, planOverrides = {}) => ({
     buildPlan: async request => {
       assert.equal(request.blockHash, blockHash);
-      return plan;
+      return {...plan, ...planOverrides};
     },
     validate: async (request, executionPlan) => ({
       status: 'success', routeKey: request.routeKey, amountIn: request.amountIn,
       chainId: request.chainId, blockNumber: request.blockNumber,
       blockHash: request.blockHash, planKey: exports.tempoPlanKey(executionPlan),
       grossOutputTransfer: request.quotedAmountOut,
-      recipientDelta: request.quotedAmountOut, ...overrides,
+      recipientDelta: request.quotedAmountOut,
+      feePayer: executionPlan.from, feeToken: pathUsd,
+      feeTokenTransfers: [{from: executionPlan.from, to: feeCollector, amount: 7n}],
+      outputTokenTransfers: [{from: manager, to: executionPlan.recipient,
+        amount: request.quotedAmountOut}],
+      ...overrides,
     }),
   });
   async function fetch(route, amount, admission, outputs) {
@@ -144,11 +151,26 @@ try {
   }
   const single = {path: [pools[0]], percentage: 100};
   const pathUsdNet = await fetch(single, 1000000n,
-    boundary({recipientDelta: 999479n}), [999800n]);
-  assert.equal(pathUsdNet.quotes.length, 0, 'gas-paid net output must not be admitted as gross');
+    boundary({recipientDelta: 999479n,
+      feeTokenTransfers: [{from: plan.from, to: feeCollector, amount: 321n}]}), [999800n]);
+  assert.equal(pathUsdNet.quotes.length, 1, 'receipt-proven gas must restore gross swap output');
+  const other = '0x1111111111111111111111111111111111111111';
+  const separate = await fetch(single, 1000000n, boundary({}, {recipient: other}), [999800n]);
+  assert.equal(separate.quotes.length, 1, 'payer gas must not reduce a separate recipient output');
+  const otherGasToken = await fetch(single, 1000000n,
+    boundary({feeToken: cUsd, feeTokenTransfers: []}), [999800n]);
+  assert.equal(otherGasToken.quotes.length, 1);
+  const unknownFee = await fetch(single, 1000000n,
+    boundary({recipientDelta: 999479n, feeTokenTransfers: []}), [999800n]);
+  assert.equal(unknownFee.quotes.length, 0, 'unknown fee must leave quote ineligible');
+  const shortOutput = await fetch(single, 1000000n,
+    boundary({grossOutputTransfer: 999799n, recipientDelta: 999799n,
+      outputTokenTransfers: [{from: manager, to: plan.recipient, amount: 999799n}]}),
+    [999800n]);
+  assert.equal(shortOutput.quotes.length, 0, 'actual output shortfall must be rejected');
   const deep = fs.readFileSync(path.join(temporary, 'src/core/strategy/DeepQuoteStrategy.ts'), 'utf8');
   assert.ok(deep.includes('this.tempoAdmissionBoundary'));
-  console.log('PASS: patch applies; normal partition unchanged; pinned hop composition; admission bound to route, amount, block, plan, and recipient output');
+  console.log('PASS: patch applies; normal partition unchanged; pinned hop composition; receipt-based recipient output and bound admission');
 } finally {
   fs.rmSync(temporary, {recursive: true, force: true});
 }

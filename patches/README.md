@@ -15,7 +15,9 @@ left unchanged. The patch edits `AggHookQuoter.ts` and `DeepQuoteStrategy.ts`:
   `TempoAdmissionBoundary` to build complete Router calldata and validate its
   execution. It checks the returned route key, input amount, chain/block
   number and hash, complete execution-plan key, gross transfer and recipient
-  balance delta before emitting a `QuoteBasic` into the strategy's quote merge.
+  swap-output reconciliation before emitting a `QuoteBasic` into the strategy's
+  quote merge. Receipt transfer evidence is required before adding back an
+  output-token gas payment made by the recipient.
   A missing boundary, execution failure, or mismatch emits no eligible quote.
 - The standalone Python dispatcher applies the same fail-closed rule, using
   its real local-fork Universal Router validator for the measured routes.
@@ -36,7 +38,8 @@ patch there, transpiles `AggHookQuoter.ts` with an installed `tsc`, and runs its
 actual exported functions with mocks for missing imported modules, hook quote
 responses, and the private plan/validator boundary. It checks classification,
 exact-input scope, block propagation, hop composition, unavailable or failed
-validation, and mismatched route, amount, block, plan and recipient output.
+validation, mismatched route, amount, block and plan, receipt-proven output-token
+gas, separate recipients, other gas tokens, and actual output shortfalls.
 The mocked validator does **not** prove that the full `DeepQuoteStrategy` or
 private UniRoute service executes.
 

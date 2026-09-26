@@ -1,0 +1,45 @@
+{
+  "chainId": 4217,
+  "blockNumber": 41183156,
+  "blockHash": "0xf6c6323efefde7d64d544512326ea00ab1d3f0cf75bddd55e7699596ee4123c3",
+  "route": "cUSD -> PathUSD",
+  "amountIn": 1000000,
+  "existingStandardQuote": {
+    "status": "success",
+    "amountOut": 999800,
+    "gasEstimate": 154869
+  },
+  "dispatch": {
+    "outcomes": [
+      {
+        "routeId": "verified-tempo",
+        "route": "cUSD -> PathUSD",
+        "quotePath": "tempo_hook",
+        "quoteStatus": "candidate",
+        "validationStatus": "validated",
+        "amountOut": 999800,
+        "quoteError": null,
+        "validationError": null,
+        "gasUsed": 200209,
+        "planDigest": "918c7ba5dd2f6b1c7063f194957059fda1d13826dbeeab1cc9a1d513102f6da3",
+        "recipientDelta": 999479,
+        "gasPaidInOutputByRecipient": 321
+      }
+    ],
+    "comparisonInput": [
+      {
+        "routeId": "verified-tempo",
+        "route": "cUSD -> PathUSD",
+        "amountIn": 1000000,
+        "amountOut": 999800,
+        "quotePath": "tempo_hook",
+        "gasUsed": 200209,
+        "validationStatus": "validated",
+        "planDigest": "918c7ba5dd2f6b1c7063f194957059fda1d13826dbeeab1cc9a1d513102f6da3",
+        "recipientDelta": 999479,
+        "gasPaidInOutputByRecipient": 321
+      }
+    ]
+  },
+  "rpcCalls": 32
+}
