@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="An evidence-based explanation of a quote and funded execution gap for tested Tempo routes through Uniswap v4." />
+    <meta name="description" content="An evidence-based explanation and validated prototype for Tempo quote admission through Uniswap v4." />
     <title>Tempo and Uniswap v4 - Quote Path Analysis</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -21,11 +21,7 @@
         <section class="intro page-width">
           <p class="plain-label">The route under investigation</p>
           <h1>Quote-Execution Mismatch in Tempo Multi-Hop Swaps</h1>
-          <p class="lede">
-            <strong>The question</strong>: Can a swap system fail to simulate and estimate the output of a route that would execute successfully in real life and therefore be unable to compare it with other routes?
-
-            We tested different route lengths, hook types, input amounts, and liquidity conditions to find where quoting and execution diverge. The gap appeared in a Tempo multi-hop route, cUSD → PathUSD → USDT0: for certain inputs, V4Quoter returns no quote, even though the swap succeeds on a fork when the transaction prepares the input first.
-          </p>
+          <p class="lede"><strong>The question:</strong> Can a swap system fail to estimate a route that would execute successfully and therefore be unable to compare it with other routes? We tested route lengths, hook types, input amounts, and liquidity conditions. For certain inputs on cUSD &rarr; PathUSD &rarr; USDT0, V4Quoter returns no quote even though a fork transaction succeeds when input is prepared first.</p>
           <div class="main-route" aria-label="cUSD through PathUSD to USDT0 using two Tempo-connected pools">
             <div class="route-token">cUSD</div><span>&rarr;</span>
             <div class="route-pool"><strong>Pool 1</strong><small>Tempo hook<br />cUSD / PathUSD</small></div><span>&rarr;</span>
@@ -70,9 +66,7 @@
           <p class="test-intro">We varied <strong>route length, hook placement, input amount, and liquidity</strong> to separate possible explanations:</p>
           <div class="test-table-wrap">
             <table class="test-table">
-              <thead>
-                <tr><th>Cases</th><th>Purpose</th><th>Reported result</th></tr>
-              </thead>
+              <thead><tr><th>Cases</th><th>Purpose</th><th>Reported result</th></tr></thead>
               <tbody>
                 <tr><td>01-02: Ordinary pools, one and two hops</td><td>Is multi-hop routing itself the cause?</td><td>Quotes match execution.</td></tr>
                 <tr><td>03: Two fee hooks</td><td>Does the quoter skip custom hooks?</td><td>Both hooks run; quote matches execution.</td></tr>
@@ -87,12 +81,11 @@
 
         <section class="experiment-log page-width" id="experiments" aria-labelledby="experiments-title">
           <h2 id="experiments-title">Experiment cases</h2>
-          <p>Open a case to see the same fields each time: full path, input and starting balance, quote, funded execution, and interpretation.</p>
+          <p>Open a case to see the full path, input and starting balance, quote, funded execution, and interpretation.</p>
           <div class="filters" role="group" aria-label="Filter experiment cases">
             <button class="filter active" data-filter="all" type="button">All <span>11</span></button>
-            <button class="filter" data-filter="returned" type="button">Quote returned <span>6</span></button>
+            <button class="filter" data-filter="returned" type="button">Quote returned <span>7</span></button>
             <button class="filter" data-filter="gap" type="button">No quote, execution works <span>3</span></button>
-            <button class="filter" data-filter="verify" type="button">Needs verification <span>1</span></button>
             <button class="filter" data-filter="reject" type="button">Both fail <span>1</span></button>
           </div>
           <div class="case-group-label"><strong>Controlled cases</strong><span>Cases 01-05</span></div>
@@ -109,15 +102,147 @@
       </section>
 
       <section class="tab-panel solution-panel" id="solution-panel" role="tabpanel" aria-labelledby="solution-tab" hidden>
-        <div class="empty-solution page-width">
-          <p class="plain-label">Solution</p>
-          <h1>No fix is presented yet.</h1>
-          <p>The controls rule out the broad claims that “multi-hop is broken” or “hooks cannot be quoted.” The reported gap is narrower: for certain amounts on this Tempo route, the quote simulation reaches a hook without the input balance that a funded transaction can prepare before execution.</p>
-        </div>
+        <section class="solution-hero page-width">
+          <p class="plain-label">Implemented and validated on a pinned Tempo fork</p>
+          <h1>Recover the quote. Prove the execution. Admit only when both match.</h1>
+          <p class="solution-lede">For verified Tempo routes, the new path quotes each hop at the same block, builds the funded transaction, validates the complete Universal Router execution, and only then adds the route to comparison.</p>
+          <div class="solution-badges"><span>Tempo chain 4217</span><span>Block 41,183,156</span><span>Exact input</span><span>Fail closed</span></div>
+
+          <div class="before-after">
+            <article class="before-card">
+              <header><span>Before</span><strong>Route disappears</strong></header>
+              <div><small>Standard V4Quoter</small><strong>no quote</strong></div>
+              <div><small>Route comparison</small><strong>no candidate</strong></div>
+              <div class="outcome bad"><i>!</i><span>Execution-compatible liquidity cannot be evaluated.</span></div>
+            </article>
+            <div class="transform-arrow" aria-hidden="true"><span>&rarr;</span><small>validated recovery</small></div>
+            <article class="after-card">
+              <header><span>After</span><strong>Route is proven</strong></header>
+              <div><small>Specialized candidate</small><strong>24.997499 USDT0</strong></div>
+              <div><small>Full Router execution</small><strong>24.997499 USDT0</strong></div>
+              <div class="outcome good"><i>&check;</i><span>Validated candidate enters comparison.</span></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="solution-section page-width" aria-labelledby="pipeline-title">
+          <p class="solution-kicker">The admission pipeline</p>
+          <h2 id="pipeline-title">A quote is a candidate, not a result.</h2>
+          <p class="section-copy">Select a step to see what the boundary proves before a Tempo route becomes eligible.</p>
+          <div class="pipeline-layout">
+            <div class="pipeline-steps" role="tablist" aria-label="Solution pipeline">
+              <button class="pipeline-step active" data-stage="classify" role="tab" aria-selected="true" type="button"><b>1</b><span>Classify route</span></button><i></i>
+              <button class="pipeline-step" data-stage="quote" role="tab" aria-selected="false" type="button"><b>2</b><span>Quote hooks</span></button><i></i>
+              <button class="pipeline-step" data-stage="plan" role="tab" aria-selected="false" type="button"><b>3</b><span>Build plan</span></button><i></i>
+              <button class="pipeline-step" data-stage="execute" role="tab" aria-selected="false" type="button"><b>4</b><span>Execute</span></button><i></i>
+              <button class="pipeline-step" data-stage="reconcile" role="tab" aria-selected="false" type="button"><b>5</b><span>Reconcile</span></button><i></i>
+              <button class="pipeline-step" data-stage="admit" role="tab" aria-selected="false" type="button"><b>6</b><span>Admit</span></button>
+            </div>
+            <article class="pipeline-detail" aria-live="polite">
+              <span id="pipeline-step-label">STEP 1</span>
+              <h3 id="pipeline-detail-title">Accept only a verified route shape.</h3>
+              <p id="pipeline-detail-body">The dispatcher checks the Tempo hook deployment, pool IDs, token direction, fee, tick spacing, chain, and pinned block before using the specialized path.</p>
+              <div id="pipeline-detail-proof"><strong>Guard</strong> Unknown hooks and unsupported route shapes never fall through to this quote path.</div>
+            </article>
+          </div>
+          <div class="failure-rail"><strong>Any failed guard exits here</strong><span>unsupported route</span><span>missing validator</span><span>execution revert</span><span>wrong output</span><span>wrong block or plan</span><b>Not admitted</b></div>
+        </section>
+
+        <section class="solution-section proof-section page-width" aria-labelledby="proof-title">
+          <p class="solution-kicker">Main proof</p>
+          <h2 id="proof-title">25 cUSD: from no quote to validated comparison input</h2>
+          <div class="proof-card">
+            <div class="proof-route"><strong>25.000000 cUSD</strong><span>&rarr;</span><b>PathUSD</b><span>&rarr;</span><strong>24.997499 USDT0</strong></div>
+            <div class="proof-metrics">
+              <div><small>Standard quote</small><strong class="metric-bad">no quote</strong><span>first hook transfer reverts</span></div>
+              <div><small>Recovered candidate</small><strong>24.997499</strong><span>USDT0</span></div>
+              <div><small>Executed output</small><strong>24.997499</strong><span>USDT0</span></div>
+              <div><small>Receipt gas</small><strong>316,216</strong><span>gas units</span></div>
+              <div><small>Hook calls</small><strong>2</strong><span>both route hops</span></div>
+              <div><small>Admission</small><strong class="metric-good">validated</strong><span>added to comparison</span></div>
+            </div>
+            <div class="evidence-switch"><button class="evidence-toggle active" data-evidence="human" type="button">Human view</button><button class="evidence-toggle" data-evidence="raw" type="button">Raw evidence</button></div>
+            <div class="evidence-panel active" data-evidence-panel="human">
+              <div><span>1</span><p>Direct hook quotes compose the candidate at the pinned block.</p></div>
+              <div><span>2</span><p>The plan transfers input before the hooks request it.</p></div>
+              <div><span>3</span><p>The recipient's USDT0 transfer equals the candidate exactly.</p></div>
+              <div><span>4</span><p>Route, amount, block, and complete plan are bound before admission.</p></div>
+            </div>
+            <pre class="evidence-panel raw-evidence" data-evidence-panel="raw" hidden><code>{
+  "quotePath": "tempo_hook",
+  "quoteStatus": "candidate",
+  "validationStatus": "validated",
+  "amountIn": 25000000,
+  "amountOut": 24997499,
+  "gasUsed": 316216,
+  "hookCalls": 2,
+  "planDigest": "f5d7fcf6...f598"
+}</code></pre>
+          </div>
+        </section>
+
+        <section class="solution-section gas-proof page-width" aria-labelledby="gas-title">
+          <p class="solution-kicker">A second validation trap</p>
+          <h2 id="gas-title">Gross swap output is not always the wallet increase.</h2>
+          <p class="section-copy">Tempo can charge transaction gas in PathUSD. The validator reads the receipt instead of treating the smaller wallet delta as a bad quote.</p>
+          <div class="equation-card">
+            <div><small>Gross swap output</small><strong>0.999800</strong><span>PathUSD</span></div><b>=</b>
+            <div><small>Wallet increase</small><strong>0.999479</strong><span>PathUSD</span></div><b>+</b>
+            <div class="fee-term"><small>Receipt-proven gas</small><strong>0.000321</strong><span>PathUSD</span></div>
+          </div>
+          <div class="recipient-compare">
+            <article><span>Same payer and recipient</span><strong>999,800 gross transfer</strong><p>Wallet rises by 999,479 because the receipt charges that wallet 321 PathUSD gas.</p></article>
+            <article><span>Separate recipient control</span><strong>999,800 received in full</strong><p>The payer separately pays 332 PathUSD gas, proving the swap output was not reduced.</p></article>
+          </div>
+          <div class="no-hardcode"><i>&check;</i><p><strong>No fixed 321-unit adjustment.</strong> Gas is reconciled only when the receipt proves the fee payer, token, collector, and amount.</p></div>
+        </section>
+
+        <section class="solution-section page-width" aria-labelledby="decision-title">
+          <p class="solution-kicker">Fail-closed routing</p>
+          <h2 id="decision-title">What is allowed into comparison?</h2>
+          <div class="decision-table-wrap">
+            <table class="decision-table">
+              <thead><tr><th>Observed state</th><th>Decision</th><th>Why</th></tr></thead>
+              <tbody>
+                <tr><td>Quote and complete execution match</td><td><span class="decision admit">Admit</span></td><td>The candidate is executable as quoted.</td></tr>
+                <tr><td>Candidate exists, but no validator is available</td><td><span class="decision stop">Keep out</span></td><td>A number alone is not execution evidence.</td></tr>
+                <tr><td>Executed output differs from the quote</td><td><span class="decision stop">Keep out</span></td><td>The candidate failed validation.</td></tr>
+                <tr><td>Route, input, block, or plan differs</td><td><span class="decision stop">Keep out</span></td><td>Evidence belongs to another execution context.</td></tr>
+                <tr><td>Output-token gas cannot be proven</td><td><span class="decision wait">Indeterminate</span></td><td>Ambiguous token flow is not admitted.</td></tr>
+                <tr><td>Tempo Exchange reports insufficient liquidity</td><td><span class="decision stop">Reject</span></td><td>Funding order cannot repair real illiquidity.</td></tr>
+                <tr><td>Ordinary no-hook route</td><td><span class="decision normal">Standard path</span></td><td>It stays with the normal quoter.</td></tr>
+                <tr><td>Unknown custom hook</td><td><span class="decision stop">Unsupported</span></td><td>It is never silently promoted.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="solution-section guard-section page-width" aria-labelledby="guards-title">
+          <p class="solution-kicker">Regression protection</p>
+          <h2 id="guards-title">What the tests protect</h2>
+          <div class="guard-wall"><span>&check; Quote recovery</span><span>&check; Full Router execution</span><span>&check; Route and amount binding</span><span>&check; Block hash binding</span><span>&check; Plan digest binding</span><span>&check; Gross-output verification</span><span>&check; Output-token gas reconciliation</span><span>&check; Separate-recipient control</span><span>&check; Genuine-liquidity rejection</span><span>&check; Missing-validator rejection</span><span>&check; Output-mismatch rejection</span><span>&check; Unknown-hook rejection</span></div>
+          <div class="test-command"><span>$</span><code>python -m unittest discover -s tests -v</code><strong>guard suite covered</strong></div>
+        </section>
+
+        <section class="solution-section integration-section page-width" aria-labelledby="integration-title">
+          <p class="solution-kicker">Integration boundary</p>
+          <h2 id="integration-title">Implemented proof, explicit production boundary.</h2>
+          <div class="integration-flow">
+            <div><small>Routing</small><strong>UniRoute strategy</strong></div><i>&rarr;</i>
+            <div><small>Public contribution</small><strong>Tempo dispatch patch</strong></div><i>&rarr;</i>
+            <div class="boundary-node"><small>Required boundary</small><strong>Plan + validator</strong></div><i>&rarr;</i>
+            <div><small>Measured proof</small><strong>Universal Router fork</strong></div>
+          </div>
+          <div class="scope-grid">
+            <article class="scope-done"><span>Implemented</span><ul><li>Runnable standalone dispatcher</li><li>Public UniRoute dispatch patch</li><li>Full Router validation for supported routes</li><li>Receipt-based gas reconciliation</li></ul></article>
+            <article class="scope-next"><span>Still required for production</span><ul><li>Private service must inject the real boundary</li><li>Arbitrary blocks and hook deployments remain unsupported</li><li>No measured better-price or user-impact claim</li><li>No claim of production deployment</li></ul></article>
+          </div>
+          <blockquote class="solution-claim">We do not admit a route because we found a number. We admit it only when the same bound execution plan proves that number.</blockquote>
+        </section>
       </section>
     </main>
 
-    <footer class="page-width"><strong>Tempo route analysis</strong><span>11 dashboard cases; 13 separate local assertions; no production-impact claim.</span></footer>
+    <footer class="page-width"><strong>Tempo route analysis</strong><span>Validated prototype on a pinned fork; no production-impact or better-price claim.</span></footer>
     <script src="./app.js"></script>
   </body>
 </html>

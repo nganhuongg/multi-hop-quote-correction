@@ -41,15 +41,13 @@ const cases = [
     interpretation: "The earlier pool made Token A available before the hook requested it. Hook position matters."
   },
   {
-    id: "F01", group: "fork", filter: "verify", tone: "verify", status: "Raw-log verification required",
-    question: "What does the real one-pool Tempo control prove?", hops: 1,
-    input: "Disputed: 1.000000 cUSD in one source; 5.249475 cUSD in another.",
-    balance: "PoolManager held 19.862459 cUSD at Tempo block 41,183,156.",
+    id: "F01", group: "fork", filter: "returned", tone: "good", status: "Gross quote and execution agree",
+    question: "Why is the wallet increase smaller than the quoted PathUSD output?", hops: 1,
+    input: "1.000000 cUSD", balance: "The payer-recipient started with 0.039805 PathUSD at block 41,183,156.",
     route: [["token","cUSD"],["hook","Tempo pool","cUSD / PathUSD"],["token","PathUSD"]],
-    quote: ["Source disagreement","0.999800 PathUSD or 5.248425 PathUSD"],
-    execution: ["Source disagreement","0.999800 gross / 0.999479 net, or 5.248425 PathUSD"],
-    interpretation: "The PDF and source summary disagree. Keep their values separate and verify the raw transaction and balance logs before citing case 06.",
-    warning: true
+    quote: ["Quote returned","0.999800 PathUSD gross"],
+    execution: ["Funded execution completed","0.999800 gross transfer; 0.999479 wallet increase"],
+    interpretation: "The receipt proves a separate 0.000321 PathUSD gas charge to the Tempo fee collector. Gross swap output matches the quote; the smaller wallet increase already includes gas. A separate-recipient control receives the full 0.999800.",
   },
   {
     id: "F02", group: "fork", filter: "returned", tone: "good", status: "Quote and execution agree",
@@ -82,8 +80,8 @@ const cases = [
     input: "25.000000 cUSD", balance: "PoolManager held 19.862459 cUSD; only the test payer was raised to 30 cUSD.",
     route: [["token","cUSD"],["hook","Tempo pool 1","cUSD / PathUSD"],["token","PathUSD"],["hook","Tempo pool 2","PathUSD / USDT0"],["token","USDT0"]],
     quote: ["no quote","Reverted at PoolManager.take(cUSD)","Input was requested before it was transferred in. Direct hook calls produced a 24.997499 USDT0 candidate, not a standard quote result."],
-    execution: ["Funded execution completed","Reported recipient increase: 24.997499 USDT0"],
-    interpretation: "This is a missing standard quote for a route that reportedly executes when funded first. It does not prove a better price."
+    execution: ["Validated full Router execution","Recipient receives 24.997499 USDT0; receipt gas is 316,216"],
+    interpretation: "The recovered candidate matches the complete settle-before-swap execution and is admitted to comparison. This proves quote recovery for the supported route, not a better price than another route."
   },
   {
     id: "F06", group: "fork", filter: "reject", tone: "reject", status: "Both paths fail",
@@ -114,8 +112,8 @@ function resultPanel(title, result, tone) {
 }
 
 function caseMarkup(item, number) {
-  const quoteTone = item.filter === "returned" ? "good" : item.filter === "verify" ? "warning" : "bad";
-  const executionTone = item.filter === "reject" ? "bad" : item.filter === "verify" ? "warning" : "good";
+  const quoteTone = item.filter === "returned" ? "good" : "bad";
+  const executionTone = item.filter === "reject" ? "bad" : "good";
   return `<details class="case-card ${item.emphasis ? "emphasis" : ""}" data-filter="${item.filter}">
     <summary>
       <span class="case-number">${String(number).padStart(2, "0")}</span>
@@ -125,7 +123,6 @@ function caseMarkup(item, number) {
       <span class="open-icon" aria-hidden="true">+</span>
     </summary>
     <div class="case-details">
-      ${item.warning ? '<div class="verification-warning"><strong>Verify before citing:</strong> the PDF and source summary disagree. Keep the values separate.</div>' : ""}
       <section class="case-field"><h3>Complete path</h3><div class="full-route">${routeMarkup(item.route)}</div></section>
       <section class="case-field facts-grid">
         <div><span>Number of hops</span><strong>${item.hops}</strong></div>
@@ -162,14 +159,90 @@ caseCards.forEach((card) => card.addEventListener("toggle", () => {
   if (card.open) caseCards.forEach((other) => { if (other !== card) other.open = false; });
 }));
 
+const pipelineStages = {
+  classify: {
+    step: "STEP 1",
+    title: "Accept only a verified route shape.",
+    body: "The dispatcher checks the Tempo hook deployment, pool IDs, token direction, fee, tick spacing, chain, and pinned block before using the specialized path.",
+    proof: "Unknown hooks and unsupported route shapes never fall through to this quote path."
+  },
+  quote: {
+    step: "STEP 2",
+    title: "Compose one candidate at one block.",
+    body: "Each Tempo hook is quoted in route order. The first output becomes the second input, and every RPC read uses the same pinned block context.",
+    proof: "A positive number is recorded as a candidate only. It is not eligible yet."
+  },
+  plan: {
+    step: "STEP 3",
+    title: "Build the transaction the user can actually execute.",
+    body: "The plan uses SETTLE, then SWAP_EXACT_IN, then TAKE, with explicit payer, recipient, deadline, minimum output, and complete Router calldata.",
+    proof: "The plan digest binds validation to these exact execution instructions."
+  },
+  execute: {
+    step: "STEP 4",
+    title: "Run the complete Universal Router transaction.",
+    body: "A fresh fork snapshot executes the funded plan against the deployed hook, Tempo Exchange, PoolManager, and Universal Router, then reverts the snapshot.",
+    proof: "A direct hook read cannot substitute for complete transaction evidence."
+  },
+  reconcile: {
+    step: "STEP 5",
+    title: "Separate swap output from transaction gas.",
+    body: "The validator reads the receipt's output transfer, wallet delta, fee token, fee payer, and fee-collector transfer before explaining any difference.",
+    proof: "Missing or ambiguous token-flow evidence remains indeterminate and stays out."
+  },
+  admit: {
+    step: "STEP 6",
+    title: "Admit only evidence bound to the same request.",
+    body: "Quote and execution must match, and validation must bind the route key, raw input, chain, block number and hash, full execution plan, and recipient output.",
+    proof: "Only then is the route added to comparisonInput."
+  }
+};
+
+const pipelineButtons = [...document.querySelectorAll(".pipeline-step")];
+const pipelineLabel = document.querySelector("#pipeline-step-label");
+const pipelineTitle = document.querySelector("#pipeline-detail-title");
+const pipelineBody = document.querySelector("#pipeline-detail-body");
+const pipelineProof = document.querySelector("#pipeline-detail-proof");
+
+pipelineButtons.forEach((button) => button.addEventListener("click", () => {
+  const stage = pipelineStages[button.dataset.stage];
+  pipelineButtons.forEach((item) => {
+    const active = item === button;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-selected", String(active));
+  });
+  pipelineLabel.textContent = stage.step;
+  pipelineTitle.textContent = stage.title;
+  pipelineBody.textContent = stage.body;
+  pipelineProof.innerHTML = `<strong>Guard</strong> ${stage.proof}`;
+}));
+
+const evidenceToggles = [...document.querySelectorAll(".evidence-toggle")];
+const evidencePanels = [...document.querySelectorAll("[data-evidence-panel]")];
+evidenceToggles.forEach((button) => button.addEventListener("click", () => {
+  evidenceToggles.forEach((item) => item.classList.toggle("active", item === button));
+  evidencePanels.forEach((panel) => {
+    const active = panel.dataset.evidencePanel === button.dataset.evidence;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
+  });
+}));
+
 const tabs = [...document.querySelectorAll(".top-tab")];
 const panels = [...document.querySelectorAll(".tab-panel")];
-tabs.forEach((tab) => tab.addEventListener("click", () => {
+tabs.forEach((tab) => tab.addEventListener("click", (event) => {
   tabs.forEach((item) => {
     const active = item === tab;
     item.classList.toggle("active", active);
     item.setAttribute("aria-selected", String(active));
   });
   panels.forEach((panel) => { panel.hidden = panel.id !== `${tab.dataset.tab}-panel`; });
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (event.isTrusted) window.scrollTo({ top: 0, behavior: "smooth" });
 }));
+
+const initialHash = window.location.hash;
+const initialTarget = initialHash ? document.querySelector(initialHash) : null;
+if (initialHash === "#solution" || initialTarget?.closest("#solution-panel")) {
+  document.querySelector("#solution-tab").click();
+  if (initialTarget) window.setTimeout(() => initialTarget.scrollIntoView(), 0);
+}
