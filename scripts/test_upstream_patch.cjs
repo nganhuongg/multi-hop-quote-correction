@@ -85,18 +85,40 @@ try {
     {path: [pools[0], {...pools[1], hooks: '0x0'}]}, 4217, TradeType.ExactIn, input, 41183156
   ), false);
 
-  const calls = [];
-  const factory = () => ({callStatic: {quote: async (direction, amount, poolId, options) => {
-    calls.push({direction, amount, poolId, options});
-    const output = calls.length === 1 ? 24995000n : 24997499n;
-    return {toBigInt: () => output};
-  }}});
   const metrics = {count: async () => {}, dist: async () => {}};
   const ctx = {logger: {warn: () => {}, debug: () => {}}, metrics};
-  const quotes = await exports.fetchAggHookQuotes(
-    {chainId: 4217}, [tempoRoute], 25000000n, TradeType.ExactIn, input,
-    new Map([[4217, {}]]), ctx, [], factory, 41183156
-  );
+  const blockHash = '0x' + 'ab'.repeat(32);
+  const plan = {to: '0xrouter', from: '0xpayer', data: '0x1234', value: '0x0',
+    recipient: '0xpayer', deadline: 1790346234, minimumOutput: 24872511n};
+  const boundary = (overrides = {}) => ({
+    buildPlan: async request => {
+      assert.equal(request.blockHash, blockHash);
+      return plan;
+    },
+    validate: async (request, executionPlan) => ({
+      status: 'success', routeKey: request.routeKey, amountIn: request.amountIn,
+      chainId: request.chainId, blockNumber: request.blockNumber,
+      blockHash: request.blockHash, planKey: exports.tempoPlanKey(executionPlan),
+      grossOutputTransfer: request.quotedAmountOut,
+      recipientDelta: request.quotedAmountOut, ...overrides,
+    }),
+  });
+  async function fetch(route, amount, admission, outputs) {
+    const calls = [];
+    const values = [...outputs];
+    const factory = () => ({callStatic: {quote: async (direction, specified, poolId, options) => {
+      calls.push({direction, amount: specified, poolId, options});
+      return {toBigInt: () => values.shift()};
+    }}});
+    const quotes = await exports.fetchAggHookQuotes(
+      {chainId: 4217}, [route], amount, TradeType.ExactIn, input,
+      new Map([[4217, {getBlock: async () => ({hash: blockHash})}]]),
+      ctx, [], factory, 41183156, admission
+    );
+    return {quotes, calls};
+  }
+  const {quotes, calls} = await fetch(tempoRoute, 25000000n, boundary(),
+    [24995000n, 24997499n]);
   assert.equal(quotes.length, 1);
   assert.equal(quotes[0].amount, 24997499n);
   assert.equal(calls.length, 2);
@@ -106,7 +128,27 @@ try {
   assert.equal(calls[1].amount, -24995000n);
   assert.deepEqual(calls.map(x => x.options.blockTag), [41183156, 41183156]);
   assert.deepEqual(calls.map(x => x.poolId), pools.map(x => x.poolId));
-  console.log('PASS: patch applies; dispatch, unsupported scope, block pinning, and two-hop quote composition');
+  const unavailable = await fetch(tempoRoute, 25000000n, undefined,
+    [24995000n, 24997499n]);
+  assert.equal(unavailable.quotes.length, 0);
+  assert.equal(unavailable.calls.length, 0);
+  for (const invalid of [
+    {status: 'failed'}, {routeKey: 'other route'}, {amountIn: 1n},
+    {blockNumber: 41183157}, {blockHash: '0xdead'},
+    {planKey: 'different plan'}, {recipientDelta: 24997498n},
+    {grossOutputTransfer: 24997498n},
+  ]) {
+    const rejected = await fetch(tempoRoute, 25000000n, boundary(invalid),
+      [24995000n, 24997499n]);
+    assert.equal(rejected.quotes.length, 0, `invalid validation admitted: ${Object.keys(invalid)}`);
+  }
+  const single = {path: [pools[0]], percentage: 100};
+  const pathUsdNet = await fetch(single, 1000000n,
+    boundary({recipientDelta: 999479n}), [999800n]);
+  assert.equal(pathUsdNet.quotes.length, 0, 'gas-paid net output must not be admitted as gross');
+  const deep = fs.readFileSync(path.join(temporary, 'src/core/strategy/DeepQuoteStrategy.ts'), 'utf8');
+  assert.ok(deep.includes('this.tempoAdmissionBoundary'));
+  console.log('PASS: patch applies; normal partition unchanged; pinned hop composition; admission bound to route, amount, block, plan, and recipient output');
 } finally {
   fs.rmSync(temporary, {recursive: true, force: true});
 }

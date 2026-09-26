@@ -50,9 +50,22 @@ output and gas paid in that same token; it must then account for the fee once.
 The proposed UniRoute patch must enforce the same execution-admission rule
 before a specialized candidate joins the strategy's eligible quote set.
 The public checkout lacks the private service wiring needed to build and
-validate the exact final plan. Its injectable validation boundary is therefore
-fail-closed when no validator is supplied. A mocked boundary test proves
-classification and admission checks, not end-to-end UniRoute integration.
+validate the exact final plan. Its `TempoAdmissionBoundary` requires a complete
+plan and a validation result bound to the route key, raw input amount,
+chain/block number and hash, full plan key, gross output and recipient delta.
+It emits no specialized `QuoteBasic` when that boundary is absent, execution
+fails, or any field differs. The standalone dispatcher also binds successful
+validation to the route, amount, block and calldata digest before adding a
+Tempo candidate to comparison. A mocked TypeScript boundary test proves
+classification and admission checks, **not** end-to-end UniRoute integration.
+
+The local 25-cUSD fork regression passes with the real hook, Tempo Exchange,
+PoolManager and Universal Router: standard quote reverts, the composed quote
+is **24,997,499 raw USDT0**, the recipient receives **24,997,499**, and the
+transaction uses **316,216 receipt gas**. The saved
+[dispatch result](demo-results/dispatch_25_cusd.json) now includes the
+execution-plan digest. There is no validated competing production route in
+this fixture, so no price improvement is claimed.
 
 ## Reproduction
 

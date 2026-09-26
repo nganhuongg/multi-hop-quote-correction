@@ -9,7 +9,8 @@ sends only the explicitly verified Tempo hook shapes to `quote_candidate`,
 leaves ordinary no-hook routes with the normal quoter adapter, and rejects
 unverified custom hooks. Each outcome records quote and validation status
 separately; only complete Router-validated candidates whose recipient balance
-delta matches the candidate enter `comparisonInput`. The one-hop PathUSD
+delta matches the candidate and whose validation binds the route, amount,
+block and execution-plan digest enter `comparisonInput`. The one-hop PathUSD
 control remains a candidate but is excluded because its recipient receives
 321 raw units less than the gross hook quote. An ordinary-quoter failure never
 triggers a Tempo retry.
@@ -22,7 +23,7 @@ On the real Tempo fork, 25,000,000 raw cUSD units on
 candidate **24,997,499 raw USDT0 units**. The complete Universal Router
 transaction receives exactly **24,997,499** and uses **316,216 receipt gas**;
 the validated candidate reaches `comparisonInput`. The measured dispatch demo
-made 31 local RPC calls; this includes a separate standard quote and a repeated
+made 35 local RPC calls; this includes a separate standard quote and a repeated
 candidate quote during execution validation, so it is not a production latency
 benchmark. See [`demo-results/dispatch_25_cusd.json`](demo-results/dispatch_25_cusd.json).
 
@@ -30,7 +31,9 @@ The public TypeScript quote-dispatch change is supplied as a reproducible
 [`patch`](patches/README.md) against UniRoute commit
 `2961efa8d44b80d353ee3af82cf868702bb6ab6a`. It passes an isolated
 boundary test and applies cleanly; it is not an end-to-end runnable UniRoute
-service. The Python dispatcher is the runnable execution-validation gate.
+service. Without a real injected validator, the TypeScript patch leaves all
+specialized hook candidates ineligible. The Python dispatcher is the runnable
+execution-validation gate.
 
 ## Newly measured result
 
@@ -88,8 +91,8 @@ and candidate insertion to public UniRoute's `AggHookQuoter` and
 `2961efa8d44b80d353ee3af82cf868702bb6ab6a` lacks `package.json`,
 `src/lib/helpers.ts` (including `isTempoAggHook`),
 `src/lib/methodParameters.ts`, and `src/models`; the full service and active
-production route selection cannot be run. The TypeScript patch does not yet
-wire the standalone execution-validation gate into that service. Current-block
+production route selection cannot be run. The TypeScript patch defines, but
+cannot wire, the private service's real plan and validator. Current-block
 support, live Permit2 handling, production ranking, and state-interaction
 checks remain future integration work.
 

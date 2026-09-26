@@ -7,7 +7,9 @@ Universal Router execution. No result enters comparison until validated.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import asdict, dataclass
 from typing import Callable
 
 from tempo_quote import (HOOK, BlockContext, RouteDescription, TempoClient,
@@ -27,6 +29,21 @@ StandardQuoter = Callable[[RouteDescription, int, BlockContext], dict]
 FullValidator = Callable[[RouteRequest, dict, BlockContext], dict]
 
 
+def route_key(route: RouteDescription) -> str:
+    """Bind an admission to the complete route, including pool keys and hook data."""
+    return hashlib.sha256(json.dumps(asdict(route), sort_keys=True).encode()).hexdigest()
+
+
+def plan_digest(plan: dict) -> str:
+    """Bind validation to the complete execution plan, including calldata."""
+    fields = ("to", "from", "data", "value", "payer", "recipient",
+              "deadline", "minimumOutput")
+    if any(field not in plan for field in fields):
+        raise ValueError("validation omitted executable plan fields")
+    return hashlib.sha256(json.dumps({field: plan[field] for field in fields},
+                                     sort_keys=True).encode()).hexdigest()
+
+
 def validate_tempo_on_fork(client: TempoClient, request: RouteRequest,
                            candidate: dict, context: BlockContext) -> dict:
     """Validate one specialized candidate with deployed contracts on Anvil."""
@@ -43,7 +60,11 @@ def validate_tempo_on_fork(client: TempoClient, request: RouteRequest,
         return {"status": "failed", "reason": "recipient balance delta differs from candidate"}
     return {"status": "success", "amountOut": execution["grossOutputTransfer"],
             "recipientDelta": execution["recipientDelta"],
-            "gasUsed": execution["gasUsed"], "hookCalls": execution["hookCalls"]}
+            "gasUsed": execution["gasUsed"], "hookCalls": execution["hookCalls"],
+            "routeKey": route_key(request.route), "amountIn": request.amount_in,
+            "chainId": context.chain_id, "blockNumber": context.number,
+            "blockHash": context.hash, "executionPlan": result["plan"],
+            "planDigest": plan_digest(result["plan"])}
 
 
 def dispatch_quotes(client: TempoClient, requests: list[RouteRequest],
@@ -108,15 +129,29 @@ def dispatch_quotes(client: TempoClient, requests: list[RouteRequest],
                 raise RuntimeError(validation.get("reason", "execution failed"))
             if validation.get("amountOut") != amount_out:
                 raise ValueError("validated output differs from candidate quote")
+            if outcome["quotePath"] == "tempo_hook":
+                if (validation.get("routeKey") != route_key(request.route)
+                        or validation.get("amountIn") != request.amount_in
+                        or validation.get("chainId") != context.chain_id
+                        or validation.get("blockNumber") != context.number
+                        or validation.get("blockHash", "").lower() != context.hash.lower()
+                        or validation.get("recipientDelta") != amount_out
+                        or validation.get("planDigest") != plan_digest(validation.get("executionPlan", {}))):
+                    raise ValueError("execution validation is not bound to route, amount, block and plan")
         except Exception as exc:
             outcome.update(validationStatus="failed", validationError=str(exc))
             continue
 
         outcome["validationStatus"] = "validated"
         outcome["gasUsed"] = validation.get("gasUsed")
-        comparison.append({"routeId": request.route_id, "route": request.route.label,
-                           "amountIn": request.amount_in, "amountOut": amount_out,
-                           "quotePath": outcome["quotePath"],
-                           "gasUsed": validation.get("gasUsed"),
-                           "validationStatus": "validated"})
+        if outcome["quotePath"] == "tempo_hook":
+            outcome["planDigest"] = validation["planDigest"]
+        entry = {"routeId": request.route_id, "route": request.route.label,
+                 "amountIn": request.amount_in, "amountOut": amount_out,
+                 "quotePath": outcome["quotePath"],
+                 "gasUsed": validation.get("gasUsed"),
+                 "validationStatus": "validated"}
+        if outcome["quotePath"] == "tempo_hook":
+            entry["planDigest"] = validation["planDigest"]
+        comparison.append(entry)
     return {"outcomes": outcomes, "comparisonInput": comparison}

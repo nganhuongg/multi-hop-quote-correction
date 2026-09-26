@@ -3,7 +3,7 @@
 import unittest
 from dataclasses import replace
 
-from quote_dispatch import RouteRequest, dispatch_quotes
+from quote_dispatch import RouteRequest, dispatch_quotes, plan_digest, route_key
 from tempo_quote import (FEE, HISTORICAL_CONTEXT, TICK_SPACING, TOKENS,
                          Hop, PoolKey, RouteDescription, RpcError, resolve_route)
 
@@ -39,6 +39,18 @@ class HookClient:
         return hex(next(self.outputs))
 
 
+def accepted_tempo_validation(request, quote, context):
+    plan = {"to": "0xrouter", "from": "0xpayer", "data": "0x1234",
+            "value": "0x0", "payer": "0xpayer", "recipient": "0xpayer",
+            "deadline": 1790346234, "minimumOutput": 24_872_511}
+    return {"status": "success", "amountOut": quote["amountOut"],
+            "recipientDelta": quote["amountOut"], "gasUsed": 320_000,
+            "routeKey": route_key(request.route), "amountIn": request.amount_in,
+            "chainId": context.chain_id, "blockNumber": context.number,
+            "blockHash": context.hash, "executionPlan": plan,
+            "planDigest": plan_digest(plan)}
+
+
 class DispatchTests(unittest.TestCase):
     def setUp(self):
         self.tempo = RouteRequest("tempo-two-hop", TEMPO_ROUTE, 25_000_000)
@@ -55,6 +67,8 @@ class DispatchTests(unittest.TestCase):
 
         def validate(request, quote, context):
             validation_calls.append((request.route_id, context))
+            if request.route_id == "tempo-two-hop":
+                return accepted_tempo_validation(request, quote, context)
             return {"status": "success", "amountOut": quote["amountOut"],
                     "gasUsed": 320_000}
 
@@ -128,6 +142,26 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(batch["outcomes"][0]["quoteStatus"], "candidate")
         self.assertEqual(batch["outcomes"][0]["validationStatus"], "failed")
         self.assertEqual(batch["comparisonInput"], [])
+
+    def test_execution_failure_and_unavailable_validation_are_ineligible(self):
+        for validator in (None, lambda *_: {"status": "failed", "reason": "router revert"}):
+            batch = dispatch_quotes(HookClient(), [self.tempo], HISTORICAL_CONTEXT,
+                                    validator=validator)
+            self.assertEqual(batch["comparisonInput"], [])
+            self.assertEqual(batch["outcomes"][0]["quoteStatus"], "candidate")
+
+    def test_validation_must_bind_route_amount_block_and_plan(self):
+        invalid = ({"routeKey": "another route"}, {"amountIn": 1},
+                   {"blockNumber": HISTORICAL_CONTEXT.number + 1},
+                   {"blockHash": "0xdead"}, {"planDigest": "another plan"},
+                   {"recipientDelta": 24_997_498})
+        for override in invalid:
+            def validate(request, quote, context):
+                return accepted_tempo_validation(request, quote, context) | override
+            batch = dispatch_quotes(HookClient(), [self.tempo], HISTORICAL_CONTEXT,
+                                    validator=validate)
+            self.assertEqual(batch["comparisonInput"], [], override)
+            self.assertEqual(batch["outcomes"][0]["validationStatus"], "failed")
 
 
 if __name__ == "__main__":

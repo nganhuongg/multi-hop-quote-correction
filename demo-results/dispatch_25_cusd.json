@@ -19,7 +19,8 @@
         "amountOut": 24997499,
         "quoteError": null,
         "validationError": null,
-        "gasUsed": 316216
+        "gasUsed": 316216,
+        "planDigest": "f5d7fcf6d7b5d4139b29eae8626a48373dc06f2c2eb792d402acb59f8beef598"
       }
     ],
     "comparisonInput": [
@@ -30,9 +31,10 @@
         "amountOut": 24997499,
         "quotePath": "tempo_hook",
         "gasUsed": 316216,
-        "validationStatus": "validated"
+        "validationStatus": "validated",
+        "planDigest": "f5d7fcf6d7b5d4139b29eae8626a48373dc06f2c2eb792d402acb59f8beef598"
       }
     ]
   },
-  "rpcCalls": 31
+  "rpcCalls": 35
 }

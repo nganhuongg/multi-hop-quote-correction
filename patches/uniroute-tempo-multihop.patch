@@ -34,15 +34,6 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
    return pool !== undefined && isTempoAggHook(pool);
  }
  
--/**
-- * Partition routes into agg-hook single-hop routes and everything else.
-- *
-- * // TODO(ROUTE-1082): multi-hop routes where one leg is an agg hook pool
-- * // currently fall through to otherRoutes and will fail in the V4Quoter.
-- * // Phase 2 should detect these and compose hook.quote() with V4Quoter
-- * // calls serially.
-- */
--export function partitionAggHookRoutes(routes: RouteBasic<Pool>[]): {
 +/** Only the two previously fork-validated cUSD -> PathUSD -> USDT0/USDC.e routes. */
 +export function isSupportedTempoMultiHopRoute(
 +  route: RouteBasic<Pool>,
@@ -70,10 +61,17 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 +    eqAddress(second.token0.address, PATH_USD);
 +}
 +
-+/**
+ /**
+- * Partition routes into agg-hook single-hop routes and everything else.
+- *
+- * // TODO(ROUTE-1082): multi-hop routes where one leg is an agg hook pool
+- * // currently fall through to otherRoutes and will fail in the V4Quoter.
+- * // Phase 2 should detect these and compose hook.quote() with V4Quoter
+- * // calls serially.
 + * Partition only verified multi-hop Tempo routes into the direct-quote arm.
 + * Other routes retain their existing standard-quoter path.
-+ */
+  */
+-export function partitionAggHookRoutes(routes: RouteBasic<Pool>[]): {
 +export function partitionAggHookRoutes(
 +  routes: RouteBasic<Pool>[], chainId?: number, tradeType?: TradeType,
 +  tokenIn?: CurrencyInfo, blockNumber?: number
@@ -105,17 +103,81 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
   *
   * @param chain       - The chain to query
   * @param routes      - Single-hop agg hook routes (pre-filtered via partitionAggHookRoutes)
-@@ -94,7 +131,8 @@
+@@ -82,6 +119,62 @@
+   provider: JsonRpcProvider
+ ) => ethers.Contract;
+ 
++/** Complete Router calldata; supplied by the service's execution-plan builder. */
++export interface TempoExecutionPlan {
++  to: string;
++  from: string;
++  data: string;
++  value: string;
++  recipient: string;
++  deadline: number;
++  minimumOutput: bigint;
++}
++
++export interface TempoAdmissionRequest {
++  route: RouteBasic<Pool>;
++  routeKey: string;
++  amountIn: bigint;
++  quotedAmountOut: bigint;
++  chainId: number;
++  blockNumber: number;
++  blockHash: string;
++}
++
++export interface TempoExecutionValidation {
++  status: 'success' | 'failed';
++  routeKey: string;
++  amountIn: bigint;
++  chainId: number;
++  blockNumber: number;
++  blockHash: string;
++  planKey: string;
++  grossOutputTransfer: bigint;
++  recipientDelta: bigint;
++}
++
++/** The private service must implement both operations against the same state. */
++export interface TempoAdmissionBoundary {
++  buildPlan(request: TempoAdmissionRequest): Promise<TempoExecutionPlan>;
++  validate(
++    request: TempoAdmissionRequest,
++    plan: TempoExecutionPlan
++  ): Promise<TempoExecutionValidation>;
++}
++
++export function tempoPlanKey(plan: TempoExecutionPlan): string {
++  return [plan.to, plan.from, plan.data, plan.value, plan.recipient,
++    String(plan.deadline), plan.minimumOutput.toString()].join('|').toLowerCase();
++}
++
++function tempoRouteKey(route: RouteBasic<Pool>, input: string): string {
++  return [input.toLowerCase(), String(route.percentage),
++    ...route.path.map(pool => {
++      const hop = pool as V4Pool;
++      return [hop.poolId, hop.hooks, hop.token0.address, hop.token1.address]
++        .join(':').toLowerCase();
++    })].join('|');
++}
++
+ const defaultContractFactory: HookContractFactory = (hookAddress, provider) =>
+   new ethers.Contract(hookAddress, AGG_HOOK_QUOTE_ABI, provider);
+ 
+@@ -94,7 +187,9 @@
    rpcProviderMap: Map<ChainId, JsonRpcProvider>,
    ctx: Context,
    metricTags: string[],
 -  contractFactory: HookContractFactory = defaultContractFactory
 +  contractFactory: HookContractFactory = defaultContractFactory,
-+  blockNumber?: number
++  blockNumber?: number,
++  admissionBoundary?: TempoAdmissionBoundary
  ): Promise<QuoteBasic[]> {
    const provider = rpcProviderMap.get(chain.chainId as ChainId);
    if (!provider) {
-@@ -133,34 +171,39 @@
+@@ -133,34 +228,69 @@
  
    const results = await Promise.allSettled(
      routes.map(async route => {
@@ -128,6 +190,9 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 -      const token0Lower = pool.token0.address.toLowerCase();
 -      const zeroForOne = tokenInLower === token0Lower;
 -
++      if (!admissionBoundary || blockNumber === undefined) {
++        throw new Error('Tempo execution validation unavailable at a pinned block');
++      }
        // Calculate the amount for this route's percentage allocation
        const routeAmount = (amount * BigInt(route.percentage)) / 100n;
 -
@@ -170,6 +235,33 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 +        currentAmount = quoted.toBigInt();
 +        currentToken = zeroForOne ? pool.token1.address : pool.token0.address;
 +      }
++
++      const block = await resolvedProvider.getBlock(blockNumber);
++      if (!block || !block.hash) {
++        throw new Error('Tempo quote block hash unavailable');
++      }
++      const request: TempoAdmissionRequest = {
++        route,
++        routeKey: tempoRouteKey(route, tokenIn.wrappedAddress.address),
++        amountIn: routeAmount,
++        quotedAmountOut: currentAmount,
++        chainId: chain.chainId,
++        blockNumber,
++        blockHash: block.hash,
++      };
++      const plan = await admissionBoundary.buildPlan(request);
++      const validation = await admissionBoundary.validate(request, plan);
++      if (validation.status !== 'success' ||
++          validation.routeKey !== request.routeKey ||
++          validation.amountIn !== request.amountIn ||
++          validation.chainId !== request.chainId ||
++          validation.blockNumber !== request.blockNumber ||
++          validation.blockHash.toLowerCase() !== request.blockHash.toLowerCase() ||
++          validation.planKey !== tempoPlanKey(plan) ||
++          validation.grossOutputTransfer !== currentAmount ||
++          validation.recipientDelta !== currentAmount) {
++        throw new Error('Tempo execution validation did not match the candidate and plan');
++      }
  
        return new QuoteBasic(
          route,
@@ -181,7 +273,46 @@ diff --git a/src/core/strategy/AggHookQuoter.ts b/src/core/strategy/AggHookQuote
 diff --git a/src/core/strategy/DeepQuoteStrategy.ts b/src/core/strategy/DeepQuoteStrategy.ts
 --- a/src/core/strategy/DeepQuoteStrategy.ts
 +++ b/src/core/strategy/DeepQuoteStrategy.ts
-@@ -165,9 +165,11 @@
+@@ -35,7 +35,11 @@
+ import {ITokenHandler} from '../../stores/token/ITokenHandler';
+ import {IFreshPoolDetailsWrapper} from '../../stores/pool/FreshPoolDetailsWrapper';
+ import {JsonRpcProvider} from '@ethersproject/providers';
+-import {partitionAggHookRoutes, fetchAggHookQuotes} from './AggHookQuoter';
++import {
++  partitionAggHookRoutes,
++  fetchAggHookQuotes,
++  TempoAdmissionBoundary,
++} from './AggHookQuoter';
+ import {isAggHookPool} from '../../lib/observability';
+ 
+ /**
+@@ -70,6 +74,7 @@
+ export class DeepQuoteStrategy extends BaseQuoteStrategy {
+   private readonly quoteBestSplitFinder: QuoteBestSplitFinder<Pool>;
+   private readonly rpcProviderMap: Map<ChainId, JsonRpcProvider>;
++  private readonly tempoAdmissionBoundary?: TempoAdmissionBoundary;
+ 
+   constructor(
+     quoteFetcher: IQuoteFetcher,
+@@ -80,7 +85,8 @@
+     tokenHandler: ITokenHandler,
+     arbitrumGasDataProviders: Map<ChainId, ArbitrumGasDataProvider>,
+     freshPoolDetailsWrapper: IFreshPoolDetailsWrapper,
+-    rpcProviderMap?: Map<ChainId, JsonRpcProvider>
++    rpcProviderMap?: Map<ChainId, JsonRpcProvider>,
++    tempoAdmissionBoundary?: TempoAdmissionBoundary
+   ) {
+     super(
+       quoteFetcher,
+@@ -135,6 +141,7 @@
+       shadowCheckpointMs
+     );
+     this.rpcProviderMap = rpcProviderMap ?? new Map();
++    this.tempoAdmissionBoundary = tempoAdmissionBoundary;
+   }
+ 
+   async findBestQuoteCandidates(
+@@ -165,9 +172,11 @@
        }
      }
  
@@ -196,14 +327,15 @@ diff --git a/src/core/strategy/DeepQuoteStrategy.ts b/src/core/strategy/DeepQuot
  
      const fetchQuotesStartTime = Date.now();
      ctx.logger.debug('Starting fetchQuotes', {
-@@ -214,7 +216,9 @@
+@@ -214,7 +223,10 @@
              tokenInCurrencyInfo,
              this.rpcProviderMap,
              ctx,
 -            metricTags
 +            metricTags,
 +            undefined,
-+            blockNumber
++            blockNumber,
++            this.tempoAdmissionBoundary
            )
          : Promise.resolve([] as QuoteBasic[]);
      const standardQuotesStartTime = Date.now();
