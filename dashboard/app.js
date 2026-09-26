@@ -2,7 +2,8 @@ const cases = [
   {
     id: "L01", group: "local", filter: "matched", hop: "single-hop",
     source: "Token A", target: "Token B", amount: "1,000,000 raw units",
-    result: "Good", resultTone: "good", routeWorks: "Yes", standard: "Meets",
+    description: "Single ordinary-pool baseline with a fixed input and no custom hook.",
+    result: "Matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "Token A" },
       { type: "pool", label: "Ordinary pool", sub: "No custom logic" },
@@ -13,7 +14,8 @@ const cases = [
   {
     id: "L02", group: "local", filter: "matched", hop: "multi-hop",
     source: "Token A", target: "Token C", amount: "1,000,000 raw units",
-    result: "Good", resultTone: "good", routeWorks: "Yes", standard: "Meets",
+    description: "Two ordinary pools isolate multi-hop behavior without custom hook logic.",
+    result: "Matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "Token A" }, { type: "pool", label: "Pool 1", sub: "Ordinary" },
       { type: "token", label: "Token B" }, { type: "pool", label: "Pool 2", sub: "Ordinary" },
@@ -24,7 +26,8 @@ const cases = [
   {
     id: "L03", group: "local", filter: "matched", hop: "multi-hop",
     source: "Token A", target: "Token C", amount: "Two fee-enabled pools",
-    result: "Good", resultTone: "good", routeWorks: "Yes", standard: "Meets",
+    description: "Two independent output-fee hooks verify that both hops run and both fees reach their hooks.",
+    result: "Matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "Token A" }, { type: "pool hook", label: "Pool 1", sub: "Custom fee" },
       { type: "token", label: "Token B" }, { type: "pool hook", label: "Pool 2", sub: "Custom fee" },
@@ -35,13 +38,14 @@ const cases = [
   {
     id: "L04", group: "local", filter: "mismatch", hop: "multi-hop",
     source: "Token A", target: "Token C", amount: "Tempo-style pool first",
-    result: "Issue found", resultTone: "issue", routeWorks: "With preparation", standard: "Fails",
+    description: "The Tempo-style hook runs first while PoolManager holds no Token A; prepayment isolates settlement order.",
+    result: "Quote gap", resultTone: "issue", routeWorks: "With prepay", standard: "V4Quoter fails",
     route: [
       { type: "token", label: "Token A" }, { type: "pool hook", label: "Pool 1", sub: "Tempo-style" },
       { type: "token", label: "Token B" }, { type: "pool", label: "Pool 2", sub: "Ordinary" },
       { type: "token", label: "Token C" },
     ],
-    comparison: { quoteStatus: "Failed", quoteAmount: "No amount", executionStatus: "Completed after prepay", executionAmount: "Output produced", matched: false },
+    comparison: { quoteStatus: "Failed", quoteAmount: "No amount", executionStatus: "Completed after prepay", executionAmount: "998,002 C", matched: false },
     error: {
       title: "The quote reaches Pool 1 before Token A is available there.",
       body: "The custom pool must move real Token A during its conversion. The quote preview starts the conversion without first supplying that token, so it stops. The diagnostic execution supplies the input first and completes the same route.",
@@ -52,18 +56,20 @@ const cases = [
   {
     id: "L05", group: "local", filter: "matched", hop: "multi-hop",
     source: "Token A", target: "Token C", amount: "Tempo-style pool last",
-    result: "Good", resultTone: "good", routeWorks: "Yes", standard: "Meets",
+    description: "An ordinary first pool supplies the intermediate token before the Tempo-style final hop.",
+    result: "Matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "Token A" }, { type: "pool", label: "Pool 1", sub: "Ordinary" },
       { type: "token", label: "Token B" }, { type: "pool hook", label: "Pool 2", sub: "Tempo-style" },
       { type: "token", label: "Token C" },
     ],
-    comparison: { quoteStatus: "Completed", quoteAmount: "Output calculated", executionStatus: "Completed", executionAmount: "Same output", matched: true },
+    comparison: { quoteStatus: "Completed", quoteAmount: "998,001 C", executionStatus: "Completed", executionAmount: "998,001 C", matched: true },
   },
   {
     id: "F01", group: "fork", filter: "mismatch", hop: "single-hop",
     source: "cUSD", target: "PathUSD", amount: "1.000000 cUSD",
-    result: "Needs review", resultTone: "issue", routeWorks: "Yes", standard: "Fails net check",
+    description: "Deployed single-pool control separates the quoted gross transfer from the recipient's net balance change.",
+    result: "Net mismatch", resultTone: "issue", routeWorks: "Yes", standard: "Gross matches",
     route: [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Tempo pool", sub: "cUSD / PathUSD" },
       { type: "token", label: "PathUSD" },
@@ -79,7 +85,8 @@ const cases = [
   {
     id: "F02", group: "fork", filter: "matched", hop: "multi-hop",
     source: "cUSD", target: "USDT0", amount: "1.000000 cUSD",
-    result: "Good", resultTone: "good", routeWorks: "Yes", standard: "Meets",
+    description: "Small-input two-pool control on the pinned fork checks the standard quote against full execution.",
+    result: "Matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Pool 1", sub: "cUSD / PathUSD" },
       { type: "token", label: "PathUSD" }, { type: "pool hook", label: "Pool 2", sub: "PathUSD / USDT0" },
@@ -90,7 +97,8 @@ const cases = [
   {
     id: "F03", group: "fork", filter: "matched", hop: "multi-hop",
     source: "cUSD", target: "USDC.e", amount: "1.000000 cUSD",
-    result: "Good", resultTone: "good", routeWorks: "Yes", standard: "Meets",
+    description: "The same small input uses a different final Tempo pool to control for the target token.",
+    result: "Matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Pool 1", sub: "cUSD / PathUSD" },
       { type: "token", label: "PathUSD" }, { type: "pool hook", label: "Pool 2", sub: "PathUSD / USDC.e" },
@@ -101,7 +109,8 @@ const cases = [
   {
     id: "F04", group: "fork", filter: "mismatch", hop: "multi-hop",
     source: "cUSD", target: "USDT0", amount: "19.862460 cUSD",
-    result: "Issue found", resultTone: "issue", routeWorks: "With preparation", standard: "Fails",
+    description: "Input is set one raw unit above PoolManager's cUSD balance to locate the exact quote-failure boundary.",
+    result: "Quote gap", resultTone: "issue", routeWorks: "With prepay", standard: "V4Quoter fails",
     route: [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Pool 1", sub: "cUSD / PathUSD" },
       { type: "token", label: "PathUSD" }, { type: "pool hook", label: "Pool 2", sub: "PathUSD / USDT0" },
@@ -118,7 +127,8 @@ const cases = [
   {
     id: "F05", group: "fork", filter: "matched", hop: "multi-hop",
     source: "cUSD", target: "USDT0", amount: "25.000000 cUSD",
-    result: "Issue reproduced", resultTone: "issue", routeWorks: "With preparation", standard: "Fails",
+    description: "Only the payer is funded; the recovered candidate is checked against a settle-before-swap transaction.",
+    result: "Recovered", resultTone: "issue", routeWorks: "With prepay", standard: "V4Quoter fails",
     route: [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Pool 1", sub: "cUSD / PathUSD" },
       { type: "token", label: "PathUSD" }, { type: "pool hook", label: "Pool 2", sub: "PathUSD / USDT0" },
@@ -129,7 +139,8 @@ const cases = [
   {
     id: "F06", group: "fork", filter: "rejected", hop: "multi-hop",
     source: "cUSD", target: "USDT0", amount: "1,000,000 cUSD",
-    result: "Correct rejection", resultTone: "reject", routeWorks: "No", standard: "Meets",
+    description: "Extreme input is a negative control: both direct quoting and prepay execution face real exchange illiquidity.",
+    result: "Valid rejection", resultTone: "reject", routeWorks: "No", standard: "Liquidity revert",
     route: [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Pool 1", sub: "cUSD / PathUSD" },
       { type: "token", label: "PathUSD" }, { type: "pool hook", label: "Pool 2", sub: "PathUSD / USDT0" },
@@ -194,20 +205,20 @@ function caseMarkup(item, number) {
     <details class="case-card" data-filter="${item.filter}" data-id="${item.id}">
       <summary>
         <span class="case-number">${String(number).padStart(2, "0")}</span>
-        <span class="swap-goal"><small>SWAP GOAL</small><strong>${item.source} <i>→</i> ${item.target}</strong><em>${item.amount}</em></span>
+        <span class="swap-goal"><small>EXPERIMENT</small><strong>${item.source} <i>→</i> ${item.target}</strong><em>${item.amount}</em><span>${item.description}</span></span>
         <span class="hop-label">${item.hop}</span>
         <span class="summary-verdict result-verdict"><small>RESULT</small><strong class="${item.resultTone}">${item.result}</strong></span>
-        <span class="summary-verdict route-verdict"><small>ROUTE WORKS?</small><strong>${item.routeWorks}</strong></span>
-        <span class="summary-verdict standard-verdict"><small>QUOTE STANDARD</small><strong>${item.standard}</strong></span>
+        <span class="summary-verdict route-verdict"><small>ROUTE VIABILITY</small><strong>${item.routeWorks}</strong></span>
+        <span class="summary-verdict standard-verdict"><small>QUOTE BEHAVIOR</small><strong>${item.standard}</strong></span>
         <span class="open-icon" aria-hidden="true">+</span>
       </summary>
       <div class="case-details">
         <section class="detail-section">
-          <div class="detail-heading"><span>1</span><div><small>ROUTE</small><h4>Where the input travels</h4></div></div>
+          <div class="detail-heading"><span>1</span><div><small>ROUTE</small><h4>Pool sequence</h4></div></div>
           <div class="full-route">${routeMarkup(item.route)}</div>
         </section>
         <section class="detail-section">
-          <div class="detail-heading"><span>2</span><div><small>COMPARISON</small><h4>Preview versus completed swap</h4></div></div>
+          <div class="detail-heading"><span>2</span><div><small>COMPARISON</small><h4>Quote and execution</h4></div></div>
           ${comparisonMarkup(item)}
         </section>
         ${errorMarkup(item.error)}
@@ -259,11 +270,13 @@ tabs.forEach((tab) => {
       item.classList.toggle("active", active);
       item.setAttribute("aria-selected", String(active));
     });
+
     panels.forEach((panel) => {
       const active = panel.id === `${tab.dataset.tab}-panel`;
       panel.classList.toggle("active", active);
       panel.hidden = !active;
     });
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 });
