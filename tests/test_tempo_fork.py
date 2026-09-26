@@ -24,6 +24,7 @@ class RealTempoForkTests(unittest.TestCase):
         self.assertEqual(result["standardQuote"]["status"], "revert")
         self.assertEqual(result["candidate"]["amountOut"], 24_997_499)
         self.assertEqual(result["execution"]["status"], "success")
+        self.assertEqual(result["execution"]["grossOutputTransfer"], 24_997_499)
         self.assertEqual(result["execution"]["recipientDelta"], 24_997_499)
         self.assertTrue(result["execution"]["matchesQuote"])
         self.assertEqual(result["execution"]["hookCalls"], 2)
@@ -37,7 +38,9 @@ class RealTempoForkTests(unittest.TestCase):
     def test_single_hop_control(self):
         result = run_fork_case(self.client, "cUSD", "PathUSD", 1_000_000)
         self.assertEqual(result["candidate"]["amountOut"], 999_800)
-        self.assertEqual(result["execution"]["recipientDelta"], 999_800)
+        self.assertEqual(result["execution"]["grossOutputTransfer"], 999_800)
+        self.assertTrue(result["execution"]["matchesQuote"])
+        self.assertLess(result["execution"]["recipientDelta"], 999_800)
 
     def test_real_exchange_illiquidity_is_rejected(self):
         result = run_fork_case(self.client, "cUSD", "USDT0", 1_000_000_000_000)
