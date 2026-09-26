@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tempo-multihop-quote-study"
+version = "0.1.0"
+description = "Pinned Tempo v4 multi-hop quote and Universal Router validation prototype"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+evidence = ["requests>=2.31,<3"]
+
+[project.scripts]
+tempo-quote-demo = "tempo_demo:main"
+
+[tool.setuptools]
+py-modules = ["tempo_quote", "tempo_demo"]

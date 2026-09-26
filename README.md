@@ -20,7 +20,16 @@ The recorded 25 cUSD run used **5 RPC calls and 343.8 ms** for candidate quoting
 
 ## Run
 
-Requires Python 3.12+ and Foundry `cast`/`anvil` (available in `PATH` or `~/.foundry/bin/cast` for encoding). The new module has no Python package dependencies. The archived investigation scripts in `evidence/` use `requests` separately. Start a **fresh** Anvil fork in terminal 1:
+Requires Python 3.12+, Foundry `cast` and `anvil`, and access to a Tempo archive RPC for the pinned fork block. The active adapter uses Python's standard library; archived scripts in `evidence/` additionally use `requests`. Install from a fresh checkout without relying on sibling source directories:
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+# Optional, only for archived evidence scripts:
+.venv/bin/python -m pip install -e '.[evidence]'
+```
+
+Put Foundry's `anvil` and `cast` in `PATH`, or use `~/.foundry/bin/anvil` and `~/.foundry/bin/cast`. The local fork must expose `evm_snapshot`, `anvil_dealTIP20`, impersonation, and `debug_traceCall`; a generic public RPC cannot run the fork regression. Start a **fresh** Anvil fork in terminal 1:
 
 ```bash
 anvil --fork-url https://rpc.tempo.xyz --fork-block-number 41183156 --port 8547 --silent
