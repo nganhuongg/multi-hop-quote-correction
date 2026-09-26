@@ -11,8 +11,11 @@ unverified custom hooks. Each outcome records quote and validation status
 separately; only complete Router-validated candidates whose recipient balance
 delta matches the candidate and whose validation binds the route, amount,
 block and execution-plan digest enter `comparisonInput`. The one-hop PathUSD
-control remains a candidate but is excluded because its recipient receives
-321 raw units less than the gross hook quote. An ordinary-quoter failure never
+control remains a candidate but is excluded because its payer-recipient's
+balance increase includes a 321-raw-PathUSD gas payment, despite the gross
+transfer matching the hook quote. The validator has not modeled that gas
+payment separately, so it conservatively requires equality with the wallet
+balance delta. An ordinary-quoter failure never
 triggers a Tempo retry.
 The ordinary quoter and validator in the comparison unit test are **boundary
 mocks**, so that test proves dispatch and candidate retention, not an economic

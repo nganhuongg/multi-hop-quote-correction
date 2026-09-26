@@ -66,21 +66,15 @@ const cases = [
     comparison: { quoteStatus: "Completed", quoteAmount: "998,001 C", executionStatus: "Completed", executionAmount: "998,001 C", matched: true },
   },
   {
-    id: "F01", group: "fork", filter: "mismatch", hop: "single-hop",
+    id: "F01", group: "fork", filter: "matched", hop: "single-hop",
     source: "cUSD", target: "PathUSD", amount: "1.000000 cUSD",
-    description: "Deployed single-pool control separates the quoted gross transfer from the recipient's net balance change.",
-    result: "Net mismatch", resultTone: "issue", routeWorks: "Yes", standard: "Gross matches",
+    description: "The hook quote matches the gross transfer; the payer-recipient also pays gas in PathUSD.",
+    result: "Gross matched", resultTone: "good", routeWorks: "Yes", standard: "Quote succeeds",
     route: [
       { type: "token", label: "cUSD" }, { type: "pool hook", label: "Tempo pool", sub: "cUSD / PathUSD" },
       { type: "token", label: "PathUSD" },
     ],
-    comparison: { quoteStatus: "Completed", quoteAmount: "0.999800 PathUSD", executionStatus: "Completed", executionAmount: "0.999479 net PathUSD", matched: false, note: "The gross transfer was 0.999800; the recipient's net balance increased by 0.999479." },
-    error: {
-      title: "Gross output matches, but the recipient's net balance is 0.000321 lower.",
-      body: "This is separate from the missing-quote problem. The recorded test confirms the gross transfer but does not yet isolate the 321-unit net difference into a specific fee or balance effect, so this case remains marked for review.",
-      quoteFlow: ["Quote", "0.999800 gross"],
-      executionFlow: ["Gross transfer 0.999800", "Net balance 0.999479"],
-    },
+    comparison: { quoteStatus: "Completed", quoteAmount: "0.999800 PathUSD gross", executionStatus: "Completed", executionAmount: "0.999800 PathUSD gross", matched: true, note: "The payer-recipient's wallet rises by 0.999479 PathUSD because the receipt charges it 0.000321 PathUSD for gas. A separate recipient receives the full 0.999800. The conservative validator excludes this candidate until ranking accounts for gas exactly once." },
   },
   {
     id: "F02", group: "fork", filter: "matched", hop: "multi-hop",
