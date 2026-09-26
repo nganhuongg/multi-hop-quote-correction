@@ -8,11 +8,15 @@ This standalone Python adapter restores a **candidate exact-input quote** for th
 sends only the explicitly verified Tempo hook shapes to `quote_candidate`,
 leaves ordinary no-hook routes with the normal quoter adapter, and rejects
 unverified custom hooks. Each outcome records quote and validation status
-separately; only complete Router-validated candidates whose recipient balance
-delta matches the candidate enter `comparisonInput`. The one-hop PathUSD
-control remains a candidate but is excluded because its recipient receives
-321 raw units less than the gross hook quote. An ordinary-quoter failure never
-triggers a Tempo retry.
+separately; only complete Router-validated candidates whose **executed swap
+transfer** matches the quote, whose recipient token flows reconcile, and whose
+validation binds the route, amount, block and execution-plan digest enter
+`comparisonInput`. The one-hop PathUSD control now qualifies: the receipt
+proves a 999,800 gross transfer and a separate 321-raw-PathUSD gas payment by
+the payer-recipient, explaining its 999,479 wallet-balance increase. The gas
+amount comes from the actual receipt, not a fixed adjustment. If those flows
+cannot be separated, validation is indeterminate. An ordinary-quoter failure
+never triggers a Tempo retry.
 The ordinary quoter and validator in the comparison unit test are **boundary
 mocks**, so that test proves dispatch and candidate retention, not an economic
 advantage over a real competing route.
@@ -22,15 +26,24 @@ On the real Tempo fork, 25,000,000 raw cUSD units on
 candidate **24,997,499 raw USDT0 units**. The complete Universal Router
 transaction receives exactly **24,997,499** and uses **316,216 receipt gas**;
 the validated candidate reaches `comparisonInput`. The measured dispatch demo
-made 31 local RPC calls; this includes a separate standard quote and a repeated
+made 35 local RPC calls; this includes a separate standard quote and a repeated
 candidate quote during execution validation, so it is not a production latency
 benchmark. See [`demo-results/dispatch_25_cusd.json`](demo-results/dispatch_25_cusd.json).
 
+The [PathUSD dispatch result](demo-results/dispatch_pathusd_1_cusd.json)
+records gross output, wallet delta and gas paid in the output token separately;
+the reconciled candidate is admitted to `comparisonInput`. These JSON files
+are **recorded fork results at block 41,183,156**, not responses from a live
+quote service. Missing or ambiguous receipt evidence yields an indeterminate
+validation result and no admission; a genuinely short executed swap transfer
+fails validation.
 The public TypeScript quote-dispatch change is supplied as a reproducible
 [`patch`](patches/README.md) against UniRoute commit
 `2961efa8d44b80d353ee3af82cf868702bb6ab6a`. It passes an isolated
 boundary test and applies cleanly; it is not an end-to-end runnable UniRoute
-service. The Python dispatcher is the runnable execution-validation gate.
+service. Without a real injected validator, the TypeScript patch leaves all
+specialized hook candidates ineligible. The Python dispatcher is the runnable
+execution-validation gate.
 
 ## Newly measured result
 
@@ -38,17 +51,22 @@ Fork parent: Tempo chain 4217, block **41,183,156**, hash `0xf6c6323efefde7d64d5
 
 | Route and input | Standard V4Quoter | New candidate | Full Universal Router transaction | Evidence |
 |---|---:|---:|---:|---|
-| cUSD -> PathUSD -> USDT0, 25,000,000 | Revert after first hook at `PoolManager.take` | 24,997,499 | Receipt status 1; recipient USDT0 **+24,997,499**; 2 hook calls; **316,216 receipt gas** | [`demo-results/tempo_25_cusd.json`](demo-results/tempo_25_cusd.json), fork regression |
+| cUSD -> PathUSD -> USDT0, 25,000,000 | Revert after first hook at `PoolManager.take` | 24,997,499 | Receipt status 1; recipient USDT0 **+24,997,499**; 2 hook calls; **316,216 receipt gas**; candidate admitted | [`demo-results/dispatch_25_cusd.json`](demo-results/dispatch_25_cusd.json), fork regression |
 | cUSD -> PathUSD -> USDT0, 1,000,000 | 999,899 | 999,899 | Recipient USDT0 +999,899 | fork regression |
 | cUSD -> PathUSD -> USDC.e, 1,000,000 | 999,800 | 999,800 | Recipient USDC.e +999,800 | fork regression |
-| cUSD -> PathUSD, 1,000,000 | 999,800 | 999,800 | Gross output transfer 999,800; recipient balance **+999,479**; 200,209 receipt gas | [`demo-results/tempo_singlehop_1_cusd.json`](demo-results/tempo_singlehop_1_cusd.json) |
+| cUSD -> PathUSD, 1,000,000 | 999,800 | 999,800 | Gross output transfer 999,800; recipient balance **+999,479** after **321 raw PathUSD** gas charge; **200,209 receipt gas units**; candidate admitted | [`demo-results/dispatch_pathusd_1_cusd.json`](demo-results/dispatch_pathusd_1_cusd.json) |
 | cUSD -> PathUSD -> USDT0, 1,000,000,000,000 | Revert | Direct hook quote reverts `InsufficientLiquidity()` | Not attempted: no valid quote | fork regression and [baseline trace](evidence/quote-harness/tempo_fork_trace_illiquid_clean.json) |
 
-The 25 cUSD quote was **directly measured** to fail; it is not an extrapolation from the 19,862,459 cUSD PoolManager balance threshold. The new two-hop candidate quotes each hook at the same pinned block and feeds hop one output to hop two. The receipt and recipient balance delta confirm the complete prepay Router transaction. Gross and net are deliberately separated: in the one-hop PathUSD case, the output transfer matches the quote but the payer's net PathUSD balance rises by 321 fewer units. The current evidence does not isolate that 321-unit difference into a specific fee component. `debug_traceCall.gasUsed` and receipt `gasUsed` differ for these local transactions; use receipt gas for execution cost and do not conflate the two measurements.
+The 25 cUSD quote was **directly measured** to fail; it is not an extrapolation from the 19,862,459 cUSD PoolManager balance threshold. The new two-hop candidate quotes each hook at the same pinned block and feeds hop one output to hop two. The receipt and recipient balance delta confirm the complete prepay Router transaction. Gross and net are deliberately separated: the one-hop PathUSD transfer equals the quote, while the payer-recipient's balance rise is 321 units lower because the receipt charges **321 PathUSD for gas** to that same wallet. The fee transfer log and a separate-recipient control establish the cause; see the [admission report](ADMISSION_REPORT.md). `debug_traceCall.gasUsed` and receipt `gasUsed` differ for these local transactions; use receipt gas for execution cost and do not conflate the two measurements.
 
 The recorded 25 cUSD run used **5 RPC calls and 343.8 ms** for candidate quoting, and **23 RPC calls and 1,478.6 ms** for the whole quote/simulation/local-transaction cycle. These are one observed run on a warm local fork, not latency estimates for production. No validated competing route or justified gas-to-output conversion is available, so no after-gas price advantage or production loss is claimed.
 
 ## Run
+
+The short [demo runbook](DEMO_RUNBOOK.md) gives exact fresh-checkout and
+three-case commands, with the evidence level of each case. Run from this
+repository root. The ordinary-route comparison control uses boundary mocks;
+no ordinary-route fork result is claimed.
 
 Requires Python 3.12+, Foundry `cast` and `anvil`, and access to a Tempo archive RPC for the pinned fork block. The isolated upstream patch test additionally requires Node.js, a `tsc` executable in `PATH`, and an explicitly specified `uniroute-public` checkout at the recorded commit. The active Python adapter uses the standard library; archived scripts in `evidence/` additionally use `requests`. Install from a fresh checkout without relying on sibling source directories:
 
@@ -62,15 +80,20 @@ python3 -m venv .venv
 Put Foundry's `anvil` and `cast` in `PATH`, or use `~/.foundry/bin/anvil` and `~/.foundry/bin/cast`. The local fork must expose `evm_snapshot`, `anvil_dealTIP20`, impersonation, and `debug_traceCall`; a generic public RPC cannot run the fork regression. Start a **fresh** Anvil fork in terminal 1:
 
 ```bash
-anvil --fork-url https://rpc.tempo.xyz --fork-block-number 41183156 --port 8547 --silent
+export PATH="$HOME/.foundry/bin:$PATH"
+export TEMPO_ARCHIVE_RPC=https://rpc.tempo.xyz
+anvil --fork-url "$TEMPO_ARCHIVE_RPC" --fork-block-number 41183156 \
+  --timestamp 1790342634 --port 8549 --silent
 ```
 
 In terminal 2, from this repository:
 
 ```bash
-TEMPO_FORK_RPC=http://127.0.0.1:8547 python3 -m unittest discover -s tests -v
-python3 tempo_demo.py --rpc http://127.0.0.1:8547 --source cUSD --target USDT0 --amount 25 --output demo-results/tempo_25_cusd.json
-python3 dispatch_demo.py --rpc http://127.0.0.1:8547 --target USDT0 --amount 25 --output demo-results/dispatch_25_cusd.json
+export PATH="$HOME/.foundry/bin:$PATH"
+export TEMPO_FORK_RPC=http://127.0.0.1:8549
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target USDT0 --amount 25
+.venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target PathUSD --amount 1
 UNIROUTE_PUBLIC_DIR=/absolute/path/to/uniroute-public node scripts/test_upstream_patch.cjs
 ```
 
@@ -88,8 +111,8 @@ and candidate insertion to public UniRoute's `AggHookQuoter` and
 `2961efa8d44b80d353ee3af82cf868702bb6ab6a` lacks `package.json`,
 `src/lib/helpers.ts` (including `isTempoAggHook`),
 `src/lib/methodParameters.ts`, and `src/models`; the full service and active
-production route selection cannot be run. The TypeScript patch does not yet
-wire the standalone execution-validation gate into that service. Current-block
+production route selection cannot be run. The TypeScript patch defines, but
+cannot wire, the private service's real plan and validator. Current-block
 support, live Permit2 handling, production ranking, and state-interaction
 checks remain future integration work.
 

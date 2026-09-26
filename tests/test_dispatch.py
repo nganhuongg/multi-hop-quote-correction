@@ -3,8 +3,9 @@
 import unittest
 from dataclasses import replace
 
-from quote_dispatch import RouteRequest, dispatch_quotes
-from tempo_quote import (FEE, HISTORICAL_CONTEXT, TICK_SPACING, TOKENS,
+from quote_dispatch import (TEMPO_FEE_COLLECTOR, RouteRequest, dispatch_quotes,
+                            plan_digest, reconcile_execution_output, route_key)
+from tempo_quote import (FEE, HISTORICAL_CONTEXT, MANAGER, PAYER, TICK_SPACING, TOKENS,
                          Hop, PoolKey, RouteDescription, RpcError, resolve_route)
 
 
@@ -39,6 +40,20 @@ class HookClient:
         return hex(next(self.outputs))
 
 
+def accepted_tempo_validation(request, quote, context):
+    plan = {"to": "0xrouter", "from": "0xpayer", "data": "0x1234",
+            "value": "0x0", "payer": "0xpayer", "recipient": "0xpayer",
+            "deadline": 1790346234, "minimumOutput": 24_872_511}
+    return {"status": "success", "amountOut": quote["amountOut"],
+            "recipientDelta": quote["amountOut"],
+            "recipientSwapOutput": quote["amountOut"],
+            "gasPaidInOutputByRecipient": 0, "gasUsed": 320_000,
+            "routeKey": route_key(request.route), "amountIn": request.amount_in,
+            "chainId": context.chain_id, "blockNumber": context.number,
+            "blockHash": context.hash, "executionPlan": plan,
+            "planDigest": plan_digest(plan)}
+
+
 class DispatchTests(unittest.TestCase):
     def setUp(self):
         self.tempo = RouteRequest("tempo-two-hop", TEMPO_ROUTE, 25_000_000)
@@ -55,6 +70,8 @@ class DispatchTests(unittest.TestCase):
 
         def validate(request, quote, context):
             validation_calls.append((request.route_id, context))
+            if request.route_id == "tempo-two-hop":
+                return accepted_tempo_validation(request, quote, context)
             return {"status": "success", "amountOut": quote["amountOut"],
                     "gasUsed": 320_000}
 
@@ -128,6 +145,89 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(batch["outcomes"][0]["quoteStatus"], "candidate")
         self.assertEqual(batch["outcomes"][0]["validationStatus"], "failed")
         self.assertEqual(batch["comparisonInput"], [])
+
+    def test_execution_failure_and_unavailable_validation_are_ineligible(self):
+        for validator in (None, lambda *_: {"status": "failed", "reason": "router revert"}):
+            batch = dispatch_quotes(HookClient(), [self.tempo], HISTORICAL_CONTEXT,
+                                    validator=validator)
+            self.assertEqual(batch["comparisonInput"], [])
+            self.assertEqual(batch["outcomes"][0]["quoteStatus"], "candidate")
+
+    def test_validation_must_bind_route_amount_block_and_plan(self):
+        invalid = ({"routeKey": "another route"}, {"amountIn": 1},
+                   {"blockNumber": HISTORICAL_CONTEXT.number + 1},
+                   {"blockHash": "0xdead"}, {"planDigest": "another plan"},
+                   {"recipientSwapOutput": 24_997_498})
+        for override in invalid:
+            def validate(request, quote, context):
+                return accepted_tempo_validation(request, quote, context) | override
+            batch = dispatch_quotes(HookClient(), [self.tempo], HISTORICAL_CONTEXT,
+                                    validator=validate)
+            self.assertEqual(batch["comparisonInput"], [], override)
+            self.assertEqual(batch["outcomes"][0]["validationStatus"], "failed")
+
+    def test_indeterminate_execution_is_not_called_a_bad_quote(self):
+        batch = dispatch_quotes(HookClient(), [self.tempo], HISTORICAL_CONTEXT,
+                                validator=lambda *_: {"status": "indeterminate",
+                                                      "reason": "fee transfer unavailable"})
+        self.assertEqual(batch["outcomes"][0]["validationStatus"], "indeterminate")
+        self.assertEqual(batch["outcomes"][0]["validationError"], "fee transfer unavailable")
+        self.assertEqual(batch["comparisonInput"], [])
+
+
+class OutputReconciliationTests(unittest.TestCase):
+    def setUp(self):
+        self.other = "0x1111111111111111111111111111111111111111"
+        self.plan = {"recipient": PAYER}
+        self.output = TOKENS["PathUSD"]
+        self.execution = {"grossOutputTransfer": 1_000,
+                          "outputTokenTransfers": [{"from": MANAGER, "to": PAYER, "amount": 1_000}],
+                          "recipientDelta": 991, "feePayer": PAYER,
+                          "feeToken": self.output,
+                          "feeTokenTransfers": [{"from": PAYER,
+                                                  "to": TEMPO_FEE_COLLECTOR, "amount": 9}]}
+
+    def test_same_payer_and_recipient_reconciles_actual_receipt_fee(self):
+        result = reconcile_execution_output(self.execution, self.plan, self.output, 1_000)
+        self.assertEqual(result, {"status": "success", "recipientSwapOutput": 1_000,
+                                  "recipientDelta": 991, "gasPaidInOutputByRecipient": 9})
+
+    def test_separate_recipient_does_not_subtract_payer_gas(self):
+        execution = self.execution | {
+            "outputTokenTransfers": [{"from": MANAGER, "to": self.other, "amount": 1_000}],
+            "recipientDelta": 1_000,
+        }
+        result = reconcile_execution_output(execution, {"recipient": self.other}, self.output, 1_000)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["gasPaidInOutputByRecipient"], 0)
+
+    def test_gas_in_another_token_needs_no_output_adjustment(self):
+        execution = self.execution | {"recipientDelta": 1_000, "feeToken": TOKENS["cUSD"],
+                                      "feeTokenTransfers": []}
+        result = reconcile_execution_output(execution, self.plan, self.output, 1_000)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["gasPaidInOutputByRecipient"], 0)
+
+    def test_true_swap_output_shortfall_is_rejected(self):
+        execution = self.execution | {
+            "outputTokenTransfers": [{"from": MANAGER, "to": PAYER, "amount": 999}],
+            "grossOutputTransfer": 999, "recipientDelta": 990,
+        }
+        result = reconcile_execution_output(execution, self.plan, self.output, 1_000)
+        self.assertEqual(result["status"], "failed")
+        self.assertIn("swap output differs", result["reason"])
+
+    def test_unproven_or_unreconciled_fee_is_indeterminate(self):
+        for changed in ({"feeTokenTransfers": []},
+                        {"recipientDelta": 990},
+                        {"feeTokenTransfers": [{"from": PAYER, "to": self.other, "amount": 9}]},
+                        {"feeTokenTransfers": [{"from": PAYER, "to": TEMPO_FEE_COLLECTOR,
+                                                 "amount": 9},
+                                                {"from": PAYER, "to": self.other, "amount": 1}]},
+                        {"outputTokenTransfers": []}):
+            result = reconcile_execution_output(self.execution | changed,
+                                                self.plan, self.output, 1_000)
+            self.assertEqual(result["status"], "indeterminate", changed)
 
 
 if __name__ == "__main__":

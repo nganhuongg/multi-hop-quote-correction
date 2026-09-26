@@ -1,0 +1,68 @@
+{
+  "chainId": 4217,
+  "blockNumber": 41183156,
+  "blockHash": "0xf6c6323efefde7d64d544512326ea00ab1d3f0cf75bddd55e7699596ee4123c3",
+  "amountInRawCUSD": 1000000,
+  "recipientCases": [
+    {
+      "recipient": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+      "initialPayerOutputBalance": 39805,
+      "recipientOutputBalanceBefore": 39805,
+      "recipientOutputBalanceAfter": 1039284,
+      "payerOutputBalanceAfter": 1039284,
+      "hookQuote": 999800,
+      "grossOutputTransfer": 999800,
+      "recipientDelta": 999479,
+      "feeToken": "0x20c0000000000000000000000000000000000000",
+      "feePayer": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+      "feeTokenTransfers": [
+        {
+          "from": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+          "to": "0xfeec000000000000000000000000000000000000",
+          "amount": 321
+        }
+      ],
+      "gasUsed": 200209,
+      "effectiveGasPrice": 1600000000,
+      "expectedFeeRawFromGas": 321,
+      "nativeGasBalanceBefore": 1000000000000000000,
+      "nativeGasBalanceAfter": 1000000000000000000,
+      "testFunding": [
+        {
+          "account": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+          "nativeGasBalanceSetTo": 1000000000000000000
+        }
+      ]
+    },
+    {
+      "recipient": "0x1111111111111111111111111111111111111111",
+      "initialPayerOutputBalance": 39805,
+      "recipientOutputBalanceBefore": 2500,
+      "recipientOutputBalanceAfter": 1002300,
+      "payerOutputBalanceAfter": 39473,
+      "hookQuote": 999800,
+      "grossOutputTransfer": 999800,
+      "recipientDelta": 999800,
+      "feeToken": "0x20c0000000000000000000000000000000000000",
+      "feePayer": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+      "feeTokenTransfers": [
+        {
+          "from": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+          "to": "0xfeec000000000000000000000000000000000000",
+          "amount": 332
+        }
+      ],
+      "gasUsed": 207009,
+      "effectiveGasPrice": 1600000000,
+      "expectedFeeRawFromGas": 332,
+      "nativeGasBalanceBefore": 1000000000000000000,
+      "nativeGasBalanceAfter": 1000000000000000000,
+      "testFunding": [
+        {
+          "account": "0xf9efc19218e6a9e58df5767ffa627f37de2bf7cc",
+          "nativeGasBalanceSetTo": 1000000000000000000
+        }
+      ]
+    }
+  ]
+}
