@@ -8,7 +8,7 @@ fork; only the test payer is funded. PoolManager and Tempo Exchange are not.
 import os
 import unittest
 
-from tempo_quote import TempoClient, run_fork_case
+from tempo_quote import PAYER, TOKENS, TempoClient, run_fork_case
 from tempo_quote import HISTORICAL_CONTEXT, resolve_route
 from quote_dispatch import RouteRequest, dispatch_quotes, validate_tempo_on_fork
 
@@ -52,7 +52,27 @@ class RealTempoForkTests(unittest.TestCase):
         self.assertEqual(result["candidate"]["amountOut"], 999_800)
         self.assertEqual(result["execution"]["grossOutputTransfer"], 999_800)
         self.assertTrue(result["execution"]["matchesQuote"])
-        self.assertLess(result["execution"]["recipientDelta"], 999_800)
+        execution = result["execution"]
+        self.assertEqual(execution["recipientDelta"], 999_479)
+        self.assertEqual(execution["payerOutputBalanceBefore"], 39_805)
+        self.assertEqual(execution["payerOutputBalanceAfter"], 1_039_284)
+        self.assertEqual(execution["feeToken"].lower(), TOKENS["PathUSD"].lower())
+        self.assertEqual(execution["feePayer"].lower(), PAYER.lower())
+        self.assertEqual(sum(log["amount"] for log in execution["feeTokenTransfers"]), 321)
+        self.assertEqual(execution["recipientDelta"] + 321, result["candidate"]["amountOut"])
+
+    def test_separate_recipient_gets_gross_output_while_payer_pays_pathusd_gas(self):
+        recipient = "0x1111111111111111111111111111111111111111"
+        result = run_fork_case(self.client, "cUSD", "PathUSD", 1_000_000,
+                               recipient=recipient)
+        execution = result["execution"]
+        self.assertEqual(execution["grossOutputTransfer"], 999_800)
+        self.assertEqual(execution["recipientOutputBalanceBefore"], 2_500)
+        self.assertEqual(execution["recipientOutputBalanceAfter"], 1_002_300)
+        self.assertEqual(execution["recipientDelta"], 999_800)
+        self.assertEqual(execution["payerOutputBalanceBefore"], 39_805)
+        self.assertEqual(execution["payerOutputBalanceAfter"], 39_473)
+        self.assertEqual(sum(log["amount"] for log in execution["feeTokenTransfers"]), 332)
 
     def test_real_exchange_illiquidity_is_rejected(self):
         result = run_fork_case(self.client, "cUSD", "USDT0", 1_000_000_000_000)

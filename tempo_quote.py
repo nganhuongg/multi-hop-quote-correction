@@ -318,6 +318,20 @@ def _recipient_transfers(node: dict, token: str, recipient: str) -> list[int]:
     return transfers
 
 
+def _receipt_fee_transfers(receipt: dict) -> list[dict]:
+    """Decode fee-token Transfer logs; do not infer a fee from gas arithmetic."""
+    token = receipt.get("feeToken", "").lower()
+    payer = receipt.get("feePayer", "").lower()
+    transfer_topic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    return [{"from": "0x" + log["topics"][1][-40:],
+             "to": "0x" + log["topics"][2][-40:],
+             "amount": int(log["data"], 16)}
+            for log in receipt.get("logs", [])
+            if log["address"].lower() == token and len(log["topics"]) >= 3
+            and log["topics"][0].lower() == transfer_topic
+            and ("0x" + log["topics"][1][-40:]).lower() == payer]
+
+
 def run_fork_route_case(client: TempoClient, route: RouteDescription, amount: int,
                         context: BlockContext, payer: str = PAYER,
                         recipient: str = PAYER) -> dict:
@@ -381,6 +395,8 @@ def run_fork_route_case(client: TempoClient, route: RouteDescription, amount: in
         if len(gross_transfers) != 1:
             raise RpcError(f"expected one output transfer to recipient, found {gross_transfers}")
         recipient_before = client.balance(TOKENS[target], recipient)
+        payer_output_before = client.balance(TOKENS[target], payer)
+        native_before_execution = int(client.rpc("eth_getBalance", [payer, "latest"]), 16)
         client.rpc("anvil_impersonateAccount", [payer])
         impersonated = True
         tx["gas"] = hex(2_000_000)
@@ -395,15 +411,27 @@ def run_fork_route_case(client: TempoClient, route: RouteDescription, amount: in
             result["execution"] = {"status": "revert", "phase": "local transaction", "txHash": tx_hash,
                                     "receipt": receipt}
             return result
-        delta = client.balance(TOKENS[target], recipient) - recipient_before
+        recipient_after = client.balance(TOKENS[target], recipient)
+        payer_output_after = client.balance(TOKENS[target], payer)
+        native_after_execution = int(client.rpc("eth_getBalance", [payer, "latest"]), 16)
+        delta = recipient_after - recipient_before
         gross = gross_transfers[0]
         result["execution"] = {"status": "success", "grossOutputTransfer": gross,
                                 "recipientDelta": delta, "netVsGross": delta - gross,
                                 "matchesQuote": gross == candidate["amountOut"],
                                 "roundingDifference": gross - candidate["amountOut"],
                                 "gasUsed": int(receipt["gasUsed"], 16), "hookCalls": hook_calls,
+                                "recipientOutputBalanceBefore": recipient_before,
+                                "recipientOutputBalanceAfter": recipient_after,
+                                "payerOutputBalanceBefore": payer_output_before,
+                                "payerOutputBalanceAfter": payer_output_after,
+                                "payerNativeBalanceBeforeExecution": native_before_execution,
+                                "payerNativeBalanceAfterExecution": native_after_execution,
                                 "preflightTraceGasUsed": int(trace.get("gasUsed", "0x0"), 16),
                                 "effectiveGasPrice": int(receipt.get("effectiveGasPrice", "0x0"), 16),
+                                "feePayer": receipt.get("feePayer"),
+                                "feeToken": receipt.get("feeToken"),
+                                "feeTokenTransfers": _receipt_fee_transfers(receipt),
                                 "localForkTxHash": tx_hash}
         return result
     finally:
