@@ -35,6 +35,25 @@ export TEMPO_FORK_RPC=http://127.0.0.1:8549
 .venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target PathUSD --amount 1
 ```
 
+To run the same full Universal Router proof from the dashboard, keep the fresh
+fork running and start the local dashboard API from the project root:
+
+```bash
+export TEMPO_FORK_RPC=http://127.0.0.1:8549
+.venv/bin/python dashboard_server.py
+```
+
+Open `http://127.0.0.1:8765/dashboard/#solution`, choose **1**, **25**, or
+**1,000,000 cUSD**, and select **Run selected case**. The browser calls only
+the loopback dashboard server. It invokes `dashboard_proof.py`, which uses
+the existing fork runner to measure the baseline quote, compose the hook
+quote, build the funded plan where possible, execute the deployed Universal
+Router where possible, read the receipt and recipient balance, and revert
+one snapshot. For the large-input control, the hook quote fails with
+`InsufficientLiquidity()`. A diagnostic-only Router plan with zero minimum
+output then checks the funded transaction's revert on the same fork snapshot;
+it is never admitted as a quote.
+
 | Case | Evidence and expected result |
 |---|---|
 | Ordinary route | `DispatchTests.test_recovered_route_reaches_comparison_with_standard_candidate` exercises ordinary and Tempo candidate admission together using **boundary mocks**. It is not an ordinary-route fork measurement. |

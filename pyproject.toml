@@ -15,6 +15,7 @@ evidence = ["requests>=2.31,<3"]
 [project.scripts]
 tempo-quote-demo = "tempo_demo:main"
 tempo-dispatch-demo = "dispatch_demo:main"
+tempo-dashboard = "dashboard_server:main"
 
 [tool.setuptools]
-py-modules = ["tempo_quote", "tempo_demo", "quote_dispatch", "dispatch_demo"]
+py-modules = ["tempo_quote", "tempo_demo", "quote_dispatch", "dispatch_demo", "dashboard_proof", "dashboard_server"]

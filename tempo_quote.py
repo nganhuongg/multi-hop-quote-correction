@@ -231,6 +231,25 @@ def _cast(mode: str, signature: str, *args: str) -> str:
     return subprocess.check_output([binary, mode, signature, *args], text=True).strip()
 
 
+def _encode_router_plan(route: RouteDescription, amount: int, minimum: int,
+                        payer: str, recipient: str, deadline: int) -> dict:
+    source, target = route.source, route.target
+    path = "[" + ",".join(
+        f"({TOKENS[hop.target]},{hop.pool_key.fee},{hop.pool_key.tick_spacing},"
+        f"{hop.pool_key.hooks},{hop.hook_data})" for hop in route.hops
+    ) + "]"
+    swap = _cast("abi-encode", "f((address,(address,uint24,int24,address,bytes)[],uint256[],uint128,uint128))",
+                 f"({TOKENS[source]},{path},[],{amount},{minimum})")
+    settle = _cast("abi-encode", "f(address,uint256,bool)", TOKENS[source], str(amount), "true")
+    take = _cast("abi-encode", "f(address,address,uint256)", TOKENS[target], recipient, "0")
+    v4 = _cast("abi-encode", "f(bytes,bytes[])", "0x0b070e", f"[{settle},{swap},{take}]")
+    calldata = _cast("calldata", "execute(bytes,bytes[],uint256)", "0x10", f"[{v4}]", str(deadline))
+    return {"to": ROUTER, "from": payer, "data": calldata, "value": "0x0",
+            "minimumOutput": minimum, "deadline": deadline, "recipient": recipient,
+            "payer": payer, "actions": ["SETTLE", "SWAP_EXACT_IN", "TAKE"],
+            "permit2Assumption": "payer has sufficient existing Permit2 allowance to Universal Router"}
+
+
 def build_plan(candidate: dict, route: RouteDescription, amount: int,
                context: BlockContext, payer: str, recipient: str, deadline: int,
                slippage_bps: int = 50) -> dict:
@@ -269,20 +288,17 @@ def build_plan(candidate: dict, route: RouteDescription, amount: int,
     if running != candidate["amountOut"] or running <= 0:
         raise ValueError("candidate output is inconsistent")
     minimum = candidate["amountOut"] * (10_000 - slippage_bps) // 10_000
-    path = "[" + ",".join(
-        f"({TOKENS[hop.target]},{hop.pool_key.fee},{hop.pool_key.tick_spacing},"
-        f"{hop.pool_key.hooks},{hop.hook_data})" for hop in route.hops
-    ) + "]"
-    swap = _cast("abi-encode", "f((address,(address,uint24,int24,address,bytes)[],uint256[],uint128,uint128))",
-                 f"({TOKENS[source]},{path},[],{amount},{minimum})")
-    settle = _cast("abi-encode", "f(address,uint256,bool)", TOKENS[source], str(amount), "true")
-    take = _cast("abi-encode", "f(address,address,uint256)", TOKENS[target], recipient, "0")
-    v4 = _cast("abi-encode", "f(bytes,bytes[])", "0x0b070e", f"[{settle},{swap},{take}]")
-    calldata = _cast("calldata", "execute(bytes,bytes[],uint256)", "0x10", f"[{v4}]", str(deadline))
-    return {"to": ROUTER, "from": payer, "data": calldata, "value": "0x0",
-            "minimumOutput": minimum, "deadline": deadline, "recipient": recipient,
-            "payer": payer, "actions": ["SETTLE", "SWAP_EXACT_IN", "TAKE"],
-            "permit2Assumption": "payer has sufficient existing Permit2 allowance to Universal Router"}
+    return _encode_router_plan(route, amount, minimum, payer, recipient, deadline)
+
+
+def build_liquidity_probe_plan(route: RouteDescription, amount: int,
+                               context: BlockContext, payer: str, recipient: str,
+                               deadline: int) -> dict:
+    """Build a local-only Router probe without pretending a quote exists."""
+    validate_supported_route(route, context)
+    plan = _encode_router_plan(route, amount, 0, payer, recipient, deadline)
+    plan["diagnosticOnly"] = True
+    return plan
 
 
 def standard_quote(client: TempoClient, route: RouteDescription, amount: int,
@@ -338,7 +354,8 @@ def _receipt_fee_transfers(receipt: dict) -> list[dict]:
 
 def run_fork_route_case(client: TempoClient, route: RouteDescription, amount: int,
                         context: BlockContext, payer: str = PAYER,
-                        recipient: str = PAYER) -> dict:
+                        recipient: str = PAYER,
+                        probe_illiquidity: bool = False) -> dict:
     """Quote, simulate and locally execute from one fork snapshot; always revert.
 
     Anvil-only methods are required. The real deployed contracts are used.
@@ -380,6 +397,60 @@ def run_fork_route_case(client: TempoClient, route: RouteDescription, amount: in
         except RpcError as exc:
             result.update(candidate={"status": "revert", "error": str(exc)},
                           execution={"status": "not-attempted", "reason": "direct hook quote failed"})
+            quote_error = str(exc).lower()
+            if not probe_illiquidity or not (
+                "0xbb55fd27" in quote_error or "insufficientliquidity" in quote_error
+            ):
+                return result
+            deadline = int(block["timestamp"], 16) + 3600
+            plan = build_liquidity_probe_plan(route, amount, context, payer, recipient, deadline)
+            result["plan"] = plan
+            tx = {key: plan[key] for key in ("to", "from", "data", "value")}
+            try:
+                client.rpc("eth_call", [tx, context.tag])
+            except RpcError as probe_error:
+                phase = ("Tempo Exchange: InsufficientLiquidity()"
+                         if ("0xbb55fd27" in str(probe_error).lower()
+                             or "insufficientliquidity" in str(probe_error).lower())
+                         else "Universal Router preflight")
+                recipient_before = client.balance(TOKENS[target], recipient)
+                client.rpc("anvil_impersonateAccount", [payer])
+                impersonated = True
+                tx["gas"] = hex(2_000_000)
+                try:
+                    tx_hash = client.rpc("eth_sendTransaction", [tx])
+                except RpcError as submit_error:
+                    result["execution"] = {"status": "revert", "phase": "local transaction submission",
+                                           "error": str(submit_error), "preflightError": str(probe_error),
+                                           "diagnosticOnly": True}
+                    return result
+                receipt = None
+                for _ in range(100):
+                    receipt = client.rpc("eth_getTransactionReceipt", [tx_hash])
+                    if receipt:
+                        break
+                    time.sleep(0.1)
+                if not receipt:
+                    result["execution"] = {"status": "indeterminate", "phase": "local receipt",
+                                           "error": "diagnostic transaction receipt unavailable",
+                                           "localForkTxHash": tx_hash, "diagnosticOnly": True}
+                    return result
+                receipt_status = int(receipt["status"], 16)
+                recipient_after = client.balance(TOKENS[target], recipient)
+                result["execution"] = {
+                    "status": "revert" if receipt_status == 0 else "success",
+                    "phase": phase,
+                    "error": str(probe_error) if receipt_status == 0 else None,
+                    "receiptStatus": receipt_status,
+                    "recipientDelta": recipient_after - recipient_before,
+                    "gasUsed": int(receipt["gasUsed"], 16),
+                    "localForkTxHash": tx_hash,
+                    "diagnosticOnly": True,
+                }
+                return result
+            result["execution"] = {"status": "indeterminate", "phase": "Universal Router preflight",
+                                   "error": "diagnostic call succeeded without a verified quote",
+                                   "diagnosticOnly": True}
             return result
         result["candidate"] = candidate
         deadline = int(block["timestamp"], 16) + 3600
@@ -412,15 +483,18 @@ def run_fork_route_case(client: TempoClient, route: RouteDescription, amount: in
                 break
             time.sleep(0.1)
         if not receipt or int(receipt["status"], 16) != 1:
-            result["execution"] = {"status": "revert", "phase": "local transaction", "txHash": tx_hash,
-                                    "receipt": receipt}
+            result["execution"] = {"status": "revert", "phase": "local transaction",
+                                    "localForkTxHash": tx_hash,
+                                    "receiptStatus": int(receipt["status"], 16) if receipt else None,
+                                    "gasUsed": int(receipt["gasUsed"], 16) if receipt else None}
             return result
         recipient_after = client.balance(TOKENS[target], recipient)
         payer_output_after = client.balance(TOKENS[target], payer)
         native_after_execution = int(client.rpc("eth_getBalance", [payer, "latest"]), 16)
         delta = recipient_after - recipient_before
         gross = gross_transfers[0]
-        result["execution"] = {"status": "success", "grossOutputTransfer": gross,
+        result["execution"] = {"status": "success", "receiptStatus": 1,
+                                "grossOutputTransfer": gross,
                                 "recipientDelta": delta, "netVsGross": delta - gross,
                                 "matchesQuote": gross == candidate["amountOut"],
                                 "roundingDifference": gross - candidate["amountOut"],
@@ -440,16 +514,21 @@ def run_fork_route_case(client: TempoClient, route: RouteDescription, amount: in
                                 "localForkTxHash": tx_hash}
         return result
     finally:
-        if impersonated:
-            client.rpc("anvil_stopImpersonatingAccount", [payer])
-        client.rpc("evm_revert", [snapshot])
+        try:
+            if impersonated:
+                client.rpc("anvil_stopImpersonatingAccount", [payer])
+        finally:
+            reverted = client.rpc("evm_revert", [snapshot])
+            if reverted is not True:
+                raise RpcError("local fork snapshot could not be restored")
         if result is not None:
             result["metrics"] = {"rpcCalls": client.count - count,
                                  "elapsedMs": round((time.perf_counter() - started) * 1000, 1)}
 
 
 def run_fork_case(client: TempoClient, source: str, target: str, amount: int,
-                  payer: str = PAYER, recipient: str = PAYER) -> dict:
+                  payer: str = PAYER, recipient: str = PAYER,
+                  probe_illiquidity: bool = False) -> dict:
     """Compatibility entry point for the original historical regression CLI."""
     return run_fork_route_case(client, resolve_route(source, target), amount,
-                               HISTORICAL_CONTEXT, payer, recipient)
+                               HISTORICAL_CONTEXT, payer, recipient, probe_illiquidity)

@@ -159,6 +159,197 @@ caseCards.forEach((card) => card.addEventListener("toggle", () => {
   if (card.open) caseCards.forEach((other) => { if (other !== card) other.open = false; });
 }));
 
+const runProofButton = document.querySelector("#run-proof");
+const forkStatus = document.querySelector("#fork-status");
+const runnerError = document.querySelector("#runner-error");
+const runnerErrorMessage = document.querySelector("#runner-error-message");
+const runnerCases = [...document.querySelectorAll(".runner-case")];
+const caseAmounts = { gap: "25 cUSD", small: "1 cUSD", illiquid: "1,000,000 cUSD" };
+let selectedCase = "gap";
+let forkReady = false;
+
+function formatTokenAmount(rawAmount, token = "USDT0") {
+  return `${new Intl.NumberFormat("en-US", { minimumFractionDigits: 6, maximumFractionDigits: 6 }).format(rawAmount / 1_000_000)} ${token}`;
+}
+
+function setForkStatus(state, message) {
+  forkStatus.className = `fork-status ${state}`;
+  forkStatus.querySelector("b").textContent = message;
+}
+
+function setStage(name, state, label) {
+  const stage = document.querySelector(`#${name}-stage`);
+  stage.dataset.state = state;
+  const badge = document.querySelector(`#${name}-state`);
+  badge.className = `step-state ${state}`;
+  badge.textContent = label;
+}
+
+function setText(id, value) {
+  document.querySelector(`#${id}`).textContent = value;
+}
+
+function clearRun() {
+  for (const name of ["baseline", "bridge", "execution", "compare"]) setStage(name, "pending", "Awaiting run");
+  for (const id of ["baseline-value", "bridge-value", "execution-value", "execution-received", "execution-gas", "compare-quote", "compare-actual", "compare-delta"]) setText(id, "—");
+  setText("baseline-detail", "Choose a case, then run the experiment.");
+  setText("bridge-detail", "The output of the first hook becomes the input of the second.");
+  setText("execution-detail", "Receipt and balance results appear after the local run.");
+  setText("compare-verdict", "No comparison has been run.");
+  document.querySelector("#bridge-hops").hidden = true;
+  document.querySelector("#bridge-hops").replaceChildren();
+  document.querySelector("#plan-order").hidden = true;
+  setText("plan-label", "Funded plan");
+  setText("plan-description", "Prepare input → swap → deliver output");
+  document.querySelector("#why-matters").hidden = true;
+  document.querySelector("#runner-record").hidden = true;
+  runnerError.hidden = true;
+}
+
+function showRunnerError(message) {
+  runnerError.hidden = false;
+  runnerErrorMessage.textContent = message;
+}
+
+runnerCases.forEach((button) => button.addEventListener("click", () => {
+  selectedCase = button.dataset.caseId;
+  runnerCases.forEach((item) => {
+    const active = item === button;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-pressed", String(active));
+  });
+  setText("selected-input", caseAmounts[selectedCase]);
+  clearRun();
+}));
+
+async function checkLocalFork() {
+  try {
+    const response = await fetch("/api/status", { cache: "no-store" });
+    if (!response.ok) throw new Error("Dashboard API is unavailable");
+    const status = await response.json();
+    if (!status.ready) {
+      forkReady = false;
+      setForkStatus("offline", "Fork not ready");
+      runProofButton.disabled = true;
+      showRunnerError(status.message);
+      return;
+    }
+    forkReady = true;
+    setForkStatus("ready", `Fork ready · chain ${status.chainId} · block ${status.blockNumber.toLocaleString()}`);
+    runProofButton.disabled = false;
+    runnerError.hidden = true;
+  } catch (error) {
+    forkReady = false;
+    setForkStatus("offline", "Dashboard API not connected");
+    runProofButton.disabled = true;
+    showRunnerError("Serve the dashboard through dashboard_server.py, then start the pinned Anvil fork.");
+  }
+}
+
+function renderRecord(record, elapsedMs) {
+  if (record.caseId !== selectedCase || record.amountInRaw !== ({ gap: 25_000_000, small: 1_000_000, illiquid: 1_000_000_000_000 })[selectedCase]) {
+    throw new Error("The fork returned a different test case");
+  }
+  const { baseline, quoteBridge, plan, execution, comparison } = record;
+  if (baseline.status === "success") {
+    setStage("baseline", "good", "Quote returned");
+    setText("baseline-value", formatTokenAmount(baseline.amountOutRaw));
+    setText("baseline-detail", "V4Quoter returned an output amount for this input.");
+  } else {
+    setStage("baseline", "bad", "No quote");
+    setText("baseline-value", "No quote");
+    setText("baseline-detail", `${baseline.errorStage}: ${baseline.error}. V4Quoter did not return an amount.`);
+  }
+
+  if (quoteBridge.status === "candidate") {
+    setStage("bridge", "good", "Candidate recovered");
+    setText("bridge-value", formatTokenAmount(quoteBridge.amountOutRaw));
+    setText("bridge-detail", `${quoteBridge.hops.length} Tempo hooks quoted in order at block ${record.blockNumber.toLocaleString()}.`);
+    const hops = document.querySelector("#bridge-hops");
+    quoteBridge.hops.forEach((hop, index) => {
+      const item = document.createElement("span");
+      item.textContent = `Pool ${index + 1}: ${hop.source} → ${hop.target} · ${formatTokenAmount(hop.amountOutRaw, hop.target)}`;
+      hops.append(item);
+    });
+    hops.hidden = false;
+    document.querySelector("#plan-order").hidden = plan.status !== "built";
+  } else {
+    setStage("bridge", "bad", "No candidate");
+    setText("bridge-value", "No recovered quote");
+    setText("bridge-detail", `${quoteBridge.errorStage}: ${quoteBridge.error}. No usable quote is available for comparison.`);
+    if (plan.status === "diagnostic") {
+      setText("plan-label", "Diagnostic only");
+      setText("plan-description", "A zero-minimum-output plan probes the real liquidity failure on this local fork.");
+      document.querySelector("#plan-order").hidden = false;
+    }
+  }
+
+  if (execution.status === "success") {
+    setStage("execution", "good", "Receipt success");
+    setText("execution-value", "Success · status 1");
+    setText("execution-received", formatTokenAmount(execution.recipientDeltaRaw));
+    setText("execution-gas", `${execution.gasUsed.toLocaleString()} units`);
+    setText("execution-detail", `${execution.hookCalls} hook calls; recipient balance change and receipt measured on the fork.`);
+  } else {
+    const reverted = execution.status === "revert";
+    setStage("execution", reverted ? "bad" : "neutral", reverted ? "Reverted" : execution.status === "indeterminate" ? "Indeterminate" : "Not attempted");
+    setText("execution-value", reverted ? (execution.receiptStatus === 0 ? "Reverted · status 0" : "Reverted before receipt") : execution.status === "indeterminate" ? "Indeterminate" : "Not attempted");
+    if (execution.recipientDeltaRaw != null) setText("execution-received", formatTokenAmount(execution.recipientDeltaRaw));
+    if (execution.gasUsed != null) setText("execution-gas", `${execution.gasUsed.toLocaleString()} units`);
+    setText("execution-detail", execution.status === "not-attempted" ? "The hook could not quote this input, so no transaction was sent." : `${execution.errorStage || "Router transaction"}: ${execution.error || "execution did not complete"}`);
+  }
+
+  if (quoteBridge.amountOutRaw != null) setText("compare-quote", formatTokenAmount(quoteBridge.amountOutRaw));
+  if (execution.recipientDeltaRaw != null) setText("compare-actual", formatTokenAmount(execution.recipientDeltaRaw));
+  if (comparison.deltaRaw != null) setText("compare-delta", formatTokenAmount(comparison.deltaRaw));
+  if (comparison.status === "matched") {
+    setStage("compare", "good", "Matches within tolerance");
+    setText("compare-verdict", `Matches within tolerance: ${comparison.reason}. Tolerance is ${comparison.toleranceRaw} raw USDT0 units.`);
+  } else {
+    setStage("compare", comparison.status === "mismatch" ? "bad" : "neutral", comparison.status === "mismatch" ? "Does not match" : "Not comparable");
+    setText("compare-verdict", comparison.reason);
+  }
+
+  document.querySelector("#why-matters").hidden = !record.whyThisMatters;
+  setText("record-summary", `Case ${record.caseId} · block ${record.blockNumber.toLocaleString()} · input ${record.amountInRaw} raw cUSD · baseline ${baseline.status} · QuoteBridge ${quoteBridge.status} · execution ${execution.status} · recipient delta ${execution.recipientDeltaRaw ?? "n/a"} · gas ${execution.gasUsed ?? "n/a"} · error stage ${quoteBridge.errorStage || baseline.errorStage || execution.errorStage || "none"} · snapshot reverted`);
+  setText("record-identifiers", `Block ${record.blockHash} · plan ${plan.planDigest || "not built"} · local tx ${execution.localForkTxHash || "not sent"} · ${elapsedMs.toLocaleString()} ms`);
+  document.querySelector("#runner-record").hidden = false;
+}
+
+runProofButton.addEventListener("click", async () => {
+  clearRun();
+  runProofButton.disabled = true;
+  runnerCases.forEach((button) => { button.disabled = true; });
+  runProofButton.classList.add("running");
+  runProofButton.querySelector("span").textContent = "Running selected case";
+  runProofButton.querySelector("i").textContent = "↻";
+  setForkStatus("checking", "Running one fork snapshot");
+  for (const name of ["baseline", "bridge", "execution", "compare"]) setStage(name, "running", "Running");
+  try {
+    const response = await fetch("/api/run-universal-router", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ caseId: selectedCase })
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) throw new Error(payload.error || "The fork experiment failed");
+    renderRecord(payload.record, payload.elapsedMs);
+    setForkStatus("ready", "Run complete · fork snapshot reverted");
+  } catch (error) {
+    for (const name of ["baseline", "bridge", "execution", "compare"]) setStage(name, "neutral", "No live result");
+    setForkStatus("offline", "Proof stopped");
+    showRunnerError(error.message);
+  } finally {
+    runProofButton.disabled = !forkReady;
+    runnerCases.forEach((button) => { button.disabled = false; });
+    runProofButton.classList.remove("running");
+    runProofButton.querySelector("span").textContent = "Run selected case again";
+    runProofButton.querySelector("i").textContent = "→";
+  }
+});
+
+checkLocalFork();
+
 const pipelineStages = {
   classify: {
     step: "STEP 1",

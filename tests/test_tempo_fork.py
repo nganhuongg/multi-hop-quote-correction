@@ -85,6 +85,17 @@ class RealTempoForkTests(unittest.TestCase):
         self.assertEqual(result["candidate"]["status"], "revert")
         self.assertEqual(result["execution"]["status"], "not-attempted")
 
+    def test_diagnostic_illiquidity_transaction_reverts_on_fork(self):
+        result = run_fork_case(self.client, "cUSD", "USDT0", 1_000_000_000_000,
+                               probe_illiquidity=True)
+        self.assertEqual(result["candidate"]["status"], "revert")
+        self.assertTrue(result["plan"]["diagnosticOnly"])
+        self.assertEqual(result["plan"]["minimumOutput"], 0)
+        self.assertEqual(result["execution"]["status"], "revert")
+        self.assertEqual(result["execution"]["receiptStatus"], 0)
+        self.assertEqual(result["execution"]["recipientDelta"], 0)
+        self.assertGreater(result["execution"]["gasUsed"], 0)
+
     def test_dispatch_candidate_is_retained_after_real_router_validation(self):
         request = RouteRequest("verified-tempo", resolve_route("cUSD", "USDT0"), 25_000_000)
         batch = dispatch_quotes(

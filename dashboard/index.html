@@ -108,21 +108,55 @@
           <p class="solution-lede">For verified Tempo routes, the new path quotes each hop at the same block, builds the funded transaction, validates the complete Universal Router execution, and only then adds the route to comparison.</p>
           <div class="solution-badges"><span>Tempo chain 4217</span><span>Block 41,183,156</span><span>Exact input</span><span>Fail closed</span></div>
 
-          <div class="before-after">
-            <article class="before-card">
-              <header><span>Before</span><strong>Route disappears</strong></header>
-              <div><small>Standard V4Quoter</small><strong>no quote</strong></div>
-              <div><small>Route comparison</small><strong>no candidate</strong></div>
-              <div class="outcome bad"><i>!</i><span>Execution-compatible liquidity cannot be evaluated.</span></div>
-            </article>
-            <div class="transform-arrow" aria-hidden="true"><span>&rarr;</span><small>validated recovery</small></div>
-            <article class="after-card">
-              <header><span>After</span><strong>Route is proven</strong></header>
-              <div><small>Specialized candidate</small><strong>24.997499 USDT0</strong></div>
-              <div><small>Full Router execution</small><strong>24.997499 USDT0</strong></div>
-              <div class="outcome good"><i>&check;</i><span>Validated candidate enters comparison.</span></div>
-            </article>
-          </div>
+          <article class="live-runner" aria-labelledby="live-runner-title">
+            <header class="runner-header">
+              <div>
+                <p class="runner-eyebrow">Interactive local-fork experiment</p>
+                <h2 id="live-runner-title">Follow one swap from quote to receipt</h2>
+                <p>Each run starts at the same Tempo fork block. The test wallet may be funded; PoolManager and Tempo Exchange are not. The fork snapshot is reverted afterward, and no transaction is sent to Tempo mainnet.</p>
+              </div>
+              <div class="runner-control">
+                <span class="fork-status checking" id="fork-status"><i></i><b>Checking local fork</b></span>
+                <button class="run-proof" id="run-proof" type="button" disabled><span>Run selected case</span><i aria-hidden="true">&rarr;</i></button>
+              </div>
+            </header>
+
+            <section class="case-picker" aria-labelledby="case-picker-title">
+              <div class="step-heading"><span>01</span><div><h3 id="case-picker-title">Choose a test case</h3><p>Same two-pool route; change only the cUSD input amount.</p></div></div>
+              <div class="runner-cases" role="group" aria-label="Choose a local fork test case">
+                <button class="runner-case active" data-case-id="gap" type="button" aria-pressed="true"><small>Quote gap</small><strong>25 cUSD</strong><span>Default case</span></button>
+                <button class="runner-case" data-case-id="small" type="button" aria-pressed="false"><small>Working control</small><strong>1 cUSD</strong><span>Standard quote returns</span></button>
+                <button class="runner-case" data-case-id="illiquid" type="button" aria-pressed="false"><small>Liquidity control</small><strong>1,000,000 cUSD</strong><span>Real liquidity limit</span></button>
+              </div>
+              <div class="runner-route" aria-label="cUSD through PathUSD to USDT0"><strong id="selected-input">25 cUSD</strong><i>&rarr;</i><span>Tempo pool 1</span><i>&rarr;</i><strong>PathUSD</strong><i>&rarr;</i><span>Tempo pool 2</span><i>&rarr;</i><strong>USDT0</strong></div>
+            </section>
+
+            <div class="experiment-flow" aria-live="polite">
+              <section class="experiment-stage" id="baseline-stage">
+                <div class="step-heading"><span>02</span><div><h3>Run baseline quote</h3><p>Call V4Quoter first and record its result.</p></div><b class="step-state" id="baseline-state">Awaiting run</b></div>
+                <div class="stage-content"><div class="stage-measure"><small>V4Quoter result</small><strong id="baseline-value">—</strong></div><p id="baseline-detail">Choose a case, then run the experiment.</p></div>
+              </section>
+
+              <section class="experiment-stage" id="bridge-stage">
+                <div class="step-heading"><span>03</span><div><h3>Run QuoteBridge</h3><p>Quote both Tempo hops and build the funded execution plan.</p></div><b class="step-state" id="bridge-state">Awaiting run</b></div>
+                <div class="stage-content bridge-content"><div class="stage-measure"><small>Recovered quote</small><strong id="bridge-value">—</strong></div><div class="bridge-detail"><p id="bridge-detail">The output of the first hook becomes the input of the second.</p><div class="bridge-hops" id="bridge-hops" hidden></div><div class="plan-order" id="plan-order" hidden><small id="plan-label">Funded plan</small><span id="plan-description">Prepare input &rarr; swap &rarr; deliver output</span><code>SETTLE &rarr; SWAP_EXACT_IN &rarr; TAKE</code></div></div></div>
+              </section>
+
+              <section class="experiment-stage" id="execution-stage">
+                <div class="step-heading"><span>04</span><div><h3>Execute on fork</h3><p>Send the complete Universal Router transaction from the funded test wallet.</p></div><b class="step-state" id="execution-state">Awaiting run</b></div>
+                <div class="execution-metrics"><div><small>Transaction status</small><strong id="execution-value">—</strong></div><div><small>Recipient received</small><strong id="execution-received">—</strong></div><div><small>Receipt gas</small><strong id="execution-gas">—</strong></div></div><p class="stage-footnote" id="execution-detail">Receipt and balance results appear after the local run.</p>
+              </section>
+
+              <section class="experiment-stage compare-stage" id="compare-stage">
+                <div class="step-heading"><span>05</span><div><h3>Compare</h3><p>Compare the recovered quote with the recipient's actual USDT0 balance change.</p></div><b class="step-state" id="compare-state">Awaiting run</b></div>
+                <div class="compare-grid"><div><small>Recovered quote</small><strong id="compare-quote">—</strong></div><span class="compare-sign">vs</span><div><small>Actual received</small><strong id="compare-actual">—</strong></div><div class="compare-difference"><small>Difference</small><strong id="compare-delta">—</strong></div></div><p class="compare-verdict" id="compare-verdict">No comparison has been run.</p>
+              </section>
+            </div>
+
+            <div class="why-matters" id="why-matters" hidden><strong>Why this matters</strong><p>The baseline could not compare this route; QuoteBridge produced a quote and verified that the corresponding swap executes.</p></div>
+            <div class="runner-record" id="runner-record" hidden><span>One isolated fork run, one record</span><code id="record-summary"></code><code id="record-identifiers"></code></div>
+            <div class="runner-error" id="runner-error" hidden role="alert"><strong>Local proof is not ready</strong><p id="runner-error-message">Start the pinned Anvil fork and serve this dashboard with <code>python dashboard_server.py</code>.</p><code>anvil --fork-url $TEMPO_ARCHIVE_RPC --fork-block-number 41183156 --timestamp 1790342634 --port 8549 --silent</code></div>
+          </article>
         </section>
 
         <section class="solution-section page-width" aria-labelledby="pipeline-title">
@@ -149,7 +183,7 @@
         </section>
 
         <section class="solution-section proof-section page-width" aria-labelledby="proof-title">
-          <p class="solution-kicker">Main proof</p>
+          <p class="solution-kicker">Previously recorded fork proof</p>
           <h2 id="proof-title">25 cUSD: from no quote to validated comparison input</h2>
           <div class="proof-card">
             <div class="proof-route"><strong>25.000000 cUSD</strong><span>&rarr;</span><b>PathUSD</b><span>&rarr;</span><strong>24.997499 USDT0</strong></div>

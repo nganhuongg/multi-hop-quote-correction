@@ -122,13 +122,29 @@ export TEMPO_FORK_RPC=http://127.0.0.1:8549
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target USDT0 --amount 25
 .venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target PathUSD --amount 1
+.venv/bin/python dashboard_server.py
+UNIROUTE_PUBLIC_DIR=/absolute/path/to/uniroute-public node scripts/test_upstream_patch.cjs
 ```
 
+The dashboard server opens the interactive proof at
+`http://127.0.0.1:8765/dashboard/#solution`. Select 1, 25, or 1,000,000
+cUSD and run the case. The case runner uses one state snapshot for the baseline
+quote, hook quote, execution plan, full Universal Router receipt when executable,
+and recipient balance change. It then reverts that snapshot. The dashboard
+server holds a second, outer safety snapshot so a timed-out worker cannot
+contaminate the next run. For the large-input
+control, a zero-minimum-output diagnostic plan probes the full Router revert
+after the hook returns insufficient liquidity; it is never treated as a quote.
 The scripts send transactions **only to local Anvil**, then revert their
 snapshots; they never broadcast to Tempo. The ordinary-route comparison test
 uses boundary mocks, not a real ordinary-route fork measurement. See the
-[full demo runbook](DEMO_RUNBOOK.md) for the three evidence levels, the
-historical deadline, and the optional TypeScript patch check.
+[full demo runbook](DEMO_RUNBOOK.md) for the three evidence levels, historical
+deadline, and optional TypeScript patch check. The CLI demo prints route,
+amount, block, quote status, candidate, execution result, output, gas, match,
+and RPC/latency metrics. `--output` saves the complete Router calldata; its
+deadline is tied to the historical fork block. The plan assumes the payer
+already has sufficient Permit2 allowance; no private key or signature is
+generated.
 
 ## Scope and provenance
 

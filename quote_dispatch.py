@@ -113,6 +113,7 @@ def validate_tempo_on_fork(client: TempoClient, request: RouteRequest,
     return {"status": "success", "amountOut": execution["grossOutputTransfer"],
             **reconciled,
             "gasUsed": execution["gasUsed"], "hookCalls": execution["hookCalls"],
+            "localForkTxHash": execution["localForkTxHash"],
             "routeKey": route_key(request.route), "amountIn": request.amount_in,
             "chainId": context.chain_id, "blockNumber": context.number,
             "blockHash": context.hash, "executionPlan": result["plan"],
@@ -204,6 +205,8 @@ def dispatch_quotes(client: TempoClient, requests: list[RouteRequest],
             outcome["planDigest"] = validation["planDigest"]
             outcome["recipientDelta"] = validation["recipientDelta"]
             outcome["gasPaidInOutputByRecipient"] = validation["gasPaidInOutputByRecipient"]
+            outcome["hookCalls"] = validation.get("hookCalls")
+            outcome["localForkTxHash"] = validation.get("localForkTxHash")
         entry = {"routeId": request.route_id, "route": request.route.label,
                  "amountIn": request.amount_in, "amountOut": amount_out,
                  "quotePath": outcome["quotePath"],
@@ -213,5 +216,7 @@ def dispatch_quotes(client: TempoClient, requests: list[RouteRequest],
             entry["planDigest"] = validation["planDigest"]
             entry["recipientDelta"] = validation["recipientDelta"]
             entry["gasPaidInOutputByRecipient"] = validation["gasPaidInOutputByRecipient"]
+            entry["hookCalls"] = validation.get("hookCalls")
+            entry["localForkTxHash"] = validation.get("localForkTxHash")
         comparison.append(entry)
     return {"outcomes": outcomes, "comparisonInput": comparison}
