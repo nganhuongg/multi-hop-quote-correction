@@ -1,92 +1,120 @@
-# Verified Tempo multi-hop quote prototype
+# QuoteBridge
 
-This standalone Python adapter restores a **candidate exact-input quote** for three pinned Tempo v1.0 route shapes and encodes a complete Universal Router V4 command. It then checks the command with `eth_call` and `debug_traceCall`, executes it **only on a snapshotted local Anvil fork**, reads the recipient's actual token-balance change and transaction receipt, and reverts the snapshot. It never broadcasts to Tempo mainnet. The existing UniRoute public checkout is incomplete, so this is an integration-ready boundary, **not** a claim that UniRoute production has been changed.
+**ETHGlobal Tokyo submission · Uniswap v4 × Tempo**
 
-## Quote-dispatch milestone
+QuoteBridge helps routing developers recover and verify exact-input quotes for
+specific multi-hop Tempo aggregator routes. Given a supported route and input
+amount, it produces a candidate quote, compatible Universal Router calldata,
+and a full-transaction validation result. A route joins the comparison input
+only after its executed output matches the quote. This is a **working standalone
+Python prototype** and a **proposed UniRoute integration patch**, not a deployed
+Uniswap feature.
 
-`quote_dispatch.dispatch_quotes` accepts a list of routes for one trade. It
-sends only the explicitly verified Tempo hook shapes to `quote_candidate`,
-leaves ordinary no-hook routes with the normal quoter adapter, and rejects
-unverified custom hooks. Each outcome records quote and validation status
-separately; only complete Router-validated candidates whose **executed swap
-transfer** matches the quote, whose recipient token flows reconcile, and whose
-validation binds the route, amount, block and execution-plan digest enter
-`comparisonInput`. The one-hop PathUSD control now qualifies: the receipt
-proves a 999,800 gross transfer and a separate 321-raw-PathUSD gas payment by
-the payer-recipient, explaining its 999,479 wallet-balance increase. The gas
-amount comes from the actual receipt, not a fixed adjustment. If those flows
-cannot be separated, validation is indeterminate. An ordinary-quoter failure
-never triggers a Tempo retry.
-The ordinary quoter and validator in the comparison unit test are **boundary
-mocks**, so that test proves dispatch and candidate retention, not an economic
-advantage over a real competing route.
+## Problem
 
-On the real Tempo fork, 25,000,000 raw cUSD units on
-`cUSD -> PathUSD -> USDT0` change from standard quote **revert** to specialized
-candidate **24,997,499 raw USDT0 units**. The complete Universal Router
-transaction receives exactly **24,997,499** and uses **316,216 receipt gas**;
-the validated candidate reaches `comparisonInput`. The measured dispatch demo
-made 35 local RPC calls; this includes a separate standard quote and a repeated
-candidate quote during execution validation, so it is not a production latency
-benchmark. See [`demo-results/dispatch_25_cusd.json`](demo-results/dispatch_25_cusd.json).
+At Tempo block **41,183,156**, the standard `V4Quoter` could not quote a
+25 cUSD → PathUSD → USDT0 route even though a properly funded Universal Router
+transaction could execute it. During quote simulation, the first Tempo hook
+called `PoolManager.take(cUSD)` before input had been settled. PoolManager held
+**19,862,459 raw cUSD**, less than the **25,000,000 raw cUSD** requested, so the
+token transfer reverted before a quote was returned. The hook was called:
+multi-hop does **not** inherently skip custom-hook logic. This is a missing
+quote, not evidence that a successful quote returned the wrong amount.
+[Trace and threshold evidence](evidence/quote-harness/REAL_TEMPO_REPORT.md)
 
-The [PathUSD dispatch result](demo-results/dispatch_pathusd_1_cusd.json)
-records gross output, wallet delta and gas paid in the output token separately;
-the reconciled candidate is admitted to `comparisonInput`. These JSON files
-are **recorded fork results at block 41,183,156**, not responses from a live
-quote service. Missing or ambiguous receipt evidence yields an indeterminate
-validation result and no admission; a genuinely short executed swap transfer
-fails validation.
-The public TypeScript quote-dispatch change is supplied as a reproducible
-[`patch`](patches/README.md) against UniRoute commit
-`2961efa8d44b80d353ee3af82cf868702bb6ab6a`. It passes an isolated
-boundary test and applies cleanly; it is not an end-to-end runnable UniRoute
-service. Without a real injected validator, the TypeScript patch leaves all
-specialized hook candidates ineligible. The Python dispatcher is the runnable
-execution-validation gate.
+## Solution
 
-## Newly measured result
+For explicitly supported Tempo routes, QuoteBridge calls the deployed hook's
+`quote()` for each hop at the same pinned block and passes each output into the
+next hop. It encodes a complete Universal Router plan with **`SETTLE →
+SWAP_EXACT_IN → TAKE`**, then simulates and executes the plan only on a
+snapshotted local fork. Receipt transfers, recipient balance changes, and any
+output-token gas charge are reconciled before the candidate is admitted to
+`comparisonInput`. Failed, missing, or ambiguous validation keeps it out.
+Ordinary routes retain the standard quote path.
 
-Fork parent: Tempo chain 4217, block **41,183,156**, hash `0xf6c6323efefde7d64d544512326ea00ab1d3f0cf75bddd55e7699596ee4123c3`. Token units below are raw six-decimal units. The local test wallet's cUSD balance was set to 30,000,000 and its native gas balance to 1 ETH; PoolManager and Tempo Exchange balances were not changed. A fresh snapshot is used for each case.
+## Architecture
 
-| Route and input | Standard V4Quoter | New candidate | Full Universal Router transaction | Evidence |
-|---|---:|---:|---:|---|
-| cUSD -> PathUSD -> USDT0, 25,000,000 | Revert after first hook at `PoolManager.take` | 24,997,499 | Receipt status 1; recipient USDT0 **+24,997,499**; 2 hook calls; **316,216 receipt gas**; candidate admitted | [`demo-results/dispatch_25_cusd.json`](demo-results/dispatch_25_cusd.json), fork regression |
-| cUSD -> PathUSD -> USDT0, 1,000,000 | 999,899 | 999,899 | Recipient USDT0 +999,899 | fork regression |
-| cUSD -> PathUSD -> USDC.e, 1,000,000 | 999,800 | 999,800 | Recipient USDC.e +999,800 | fork regression |
-| cUSD -> PathUSD, 1,000,000 | 999,800 | 999,800 | Gross output transfer 999,800; recipient balance **+999,479** after **321 raw PathUSD** gas charge; **200,209 receipt gas units**; candidate admitted | [`demo-results/dispatch_pathusd_1_cusd.json`](demo-results/dispatch_pathusd_1_cusd.json) |
-| cUSD -> PathUSD -> USDT0, 1,000,000,000,000 | Revert | Direct hook quote reverts `InsufficientLiquidity()` | Not attempted: no valid quote | fork regression and [baseline trace](evidence/quote-harness/tempo_fork_trace_illiquid_clean.json) |
+```mermaid
+flowchart LR
+  R[Route candidates] --> D{Quote dispatch}
+  D -->|ordinary| S[Standard quoter]
+  D -->|verified Tempo shape| H[Block-pinned hook quotes, hop by hop]
+  H --> C[Candidate quote]
+  C --> P[Universal Router plan: settle, swap, take]
+  P --> V[Full local-fork transaction + receipt validation]
+  V -->|output and context match| A[Eligible comparison input]
+  V -->|failure or uncertain evidence| X[Not admitted]
+  S --> N[Normal-route validation boundary]
+  N --> A
+```
 
-The 25 cUSD quote was **directly measured** to fail; it is not an extrapolation from the 19,862,459 cUSD PoolManager balance threshold. The new two-hop candidate quotes each hook at the same pinned block and feeds hop one output to hop two. The receipt and recipient balance delta confirm the complete prepay Router transaction. Gross and net are deliberately separated: the one-hop PathUSD transfer equals the quote, while the payer-recipient's balance rise is 321 units lower because the receipt charges **321 PathUSD for gas** to that same wallet. The fee transfer log and a separate-recipient control establish the cause; see the [admission report](ADMISSION_REPORT.md). `debug_traceCall.gasUsed` and receipt `gasUsed` differ for these local transactions; use receipt gas for execution cost and do not conflate the two measurements.
+The Python path above is runnable on a local Tempo fork. The proposed
+TypeScript patch supplies dispatch and an injectable admission boundary; its
+real production validator is **not wired** into public UniRoute.
 
-The recorded 25 cUSD run used **5 RPC calls and 343.8 ms** for candidate quoting, and **23 RPC calls and 1,478.6 ms** for the whole quote/simulation/local-transaction cycle. These are one observed run on a warm local fork, not latency estimates for production. No validated competing route or justified gas-to-output conversion is available, so no after-gas price advantage or production loss is claimed.
+## Verified before and after
 
-## Run
+The table is a **recorded local-fork result**, not a live quote or a claim of
+better pricing. All tokens in this case have six decimals.
 
-The short [demo runbook](DEMO_RUNBOOK.md) gives exact fresh-checkout and
-three-case commands, with the evidence level of each case. Run from this
-repository root. The ordinary-route comparison control uses boundary mocks;
-no ordinary-route fork result is claimed.
+| 25 cUSD → PathUSD → USDT0 | Standard path | QuoteBridge path |
+|---|---|---|
+| Quote | `V4Quoter` reverts at the first hook's `PoolManager.take`; no amount | **24,997,499 raw USDT0** candidate |
+| Full Router execution | A swap-before-settlement plan fails above the balance threshold | Settlement-before-swap succeeds; recipient gains **24,997,499 raw USDT0** |
+| Admission | No quote to compare | Validated candidate enters `comparisonInput`; **316,216 receipt gas units** |
 
-Requires Python 3.12+, Foundry `cast` and `anvil`, and access to a Tempo archive RPC for the pinned fork block. The isolated upstream patch test additionally requires Node.js, a `tsc` executable in `PATH`, and an explicitly specified `uniroute-public` checkout at the recorded commit. The active Python adapter uses the standard library; archived scripts in `evidence/` additionally use `requests`. Install from a fresh checkout without relying on sibling source directories:
+Evidence: [recorded dispatch JSON](demo-results/dispatch_25_cusd.json),
+[fork regression](tests/test_tempo_fork.py#L23), and
+[baseline trace report](evidence/quote-harness/REAL_TEMPO_REPORT.md). The fork
+funded only the test payer to 30 cUSD and 1 ETH native balance; it did **not**
+top up PoolManager or Tempo Exchange.
+
+## Uniswap integration and code
+
+- **Running prototype:** [supported-route checks](tempo_quote.py#L179),
+  [per-hop hook quoting](tempo_quote.py#L193),
+  [Universal Router plan encoding](tempo_quote.py#L234), and
+  [full local-fork execution](tempo_quote.py#L339).
+  [Quote dispatch](quote_dispatch.py#L122) and
+  [receipt-based output reconciliation](quote_dispatch.py#L48) keep candidate
+  status separate from execution validation. The
+  [CLI demo](dispatch_demo.py#L14) exposes the recorded use case.
+- **Proposed UniRoute patch:**
+  [route classification and scoped dispatch](patches/uniroute-tempo-multihop.patch#L1),
+  [injectable execution-admission interface](patches/uniroute-tempo-multihop.patch#L156),
+  and [DeepQuoteStrategy connection](patches/uniroute-tempo-multihop.patch#L318).
+  Its [boundary test](scripts/test_upstream_patch.cjs) uses mocks for missing
+  private components. It does **not** prove an end-to-end runnable UniRoute
+  service. [Patch details and baseline commit](patches/README.md).
+
+We reuse deployed Uniswap v4 **PoolManager**, **V4Quoter**, and **Universal
+Router** contracts, plus the real TempoExchangeAggregator hook and Tempo
+Exchange behavior on the fork. Public UniRoute already has an exact-input
+`SETTLE → SWAP → TAKE` step builder; we did not modify or redeploy Router.
+The public UniRoute checkout lacks components needed to run the complete
+service and connect its real final-plan validator.
+
+## Quick start
+
+Requires Python **3.12+**, Foundry `anvil` and `cast`, and a Tempo archive RPC
+serving the recorded block. Run from this repository root:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
-# Optional, only for archived evidence scripts:
-.venv/bin/python -m pip install -e '.[evidence]'
+export PATH="$HOME/.foundry/bin:$PATH"
 ```
 
-Put Foundry's `anvil` and `cast` in `PATH`, or use `~/.foundry/bin/anvil` and `~/.foundry/bin/cast`. The local fork must expose `evm_snapshot`, `anvil_dealTIP20`, impersonation, and `debug_traceCall`; a generic public RPC cannot run the fork regression. Start a **fresh** Anvil fork in terminal 1:
+In terminal 1, start a **fresh fork on an unused port**:
 
 ```bash
-export PATH="$HOME/.foundry/bin:$PATH"
 export TEMPO_ARCHIVE_RPC=https://rpc.tempo.xyz
 anvil --fork-url "$TEMPO_ARCHIVE_RPC" --fork-block-number 41183156 \
   --timestamp 1790342634 --port 8549 --silent
 ```
 
-In terminal 2, from this repository:
+In terminal 2:
 
 ```bash
 export PATH="$HOME/.foundry/bin:$PATH"
@@ -94,26 +122,35 @@ export TEMPO_FORK_RPC=http://127.0.0.1:8549
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target USDT0 --amount 25
 .venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target PathUSD --amount 1
-UNIROUTE_PUBLIC_DIR=/absolute/path/to/uniroute-public node scripts/test_upstream_patch.cjs
 ```
 
-The demo prints route, amount, block, existing quoter status, candidate, execution status, output, gas, match and RPC/latency metrics. `--output` also saves the **complete** Universal Router calldata. The deadline in that calldata is tied to this historical fork block; it is **not** current-chain executable calldata. The plan uses 50 bps minimum-output protection, an explicit deadline, payer-as-user settlement, and a specified recipient. It assumes the payer already has sufficient Permit2 allowance; the historical payer did on this fork, as the full transaction demonstrates. No private key or Permit2 signature is generated.
+The scripts send transactions **only to local Anvil**, then revert their
+snapshots; they never broadcast to Tempo. The ordinary-route comparison test
+uses boundary mocks, not a real ordinary-route fork measurement. See the
+[full demo runbook](DEMO_RUNBOOK.md) for the three evidence levels, the
+historical deadline, and the optional TypeScript patch check.
 
-## Scope and integration boundary
+## Scope and provenance
 
-`tempo_quote.py` accepts only cUSD -> PathUSD, cUSD -> PathUSD -> USDT0, and cUSD -> PathUSD -> USDC.e at the verified block and deployed hook `0x7169a78a59f136876e724b648fbb339a42f46888`. Pool IDs, direction, fee 500, tick spacing 10, token addresses and six-decimal units are explicit. Other hooks, chains, blocks, reverse directions, arbitrary route composition, exact-output and untested source tokens are rejected. Independent hop quotes are marked **candidate** until the complete Router execution is checked; shared mutable exchange liquidity could invalidate a composed number at other amounts.
+Supported exact-input routes are **cUSD → PathUSD**, **cUSD → PathUSD →
+USDT0**, and **cUSD → PathUSD → USDC.e**, using the checked Tempo v1.0 hook
+deployment on chain **4217** at block **41,183,156**. Pool IDs, directions,
+fee, tick spacing, and block hash are fixed in the adapter. Other hooks,
+chains, blocks, route compositions, and exact-output swaps are not claimed.
+Independent hop quotes are candidates until full execution validates them.
+There is no measured production failure rate, user loss, or net-price saving
+against a validated competing route.
 
-The standalone API boundary is `dispatch_quotes` -> `quote_candidate` ->
-`build_plan` -> `run_fork_route_case`. The patch connects route classification
-and candidate insertion to public UniRoute's `AggHookQuoter` and
-`DeepQuoteStrategy`; its existing `SwapStepsFactory` contains an exact-input
-`SETTLE -> SWAP -> TAKE` branch. The public UniRoute checkout at
-`2961efa8d44b80d353ee3af82cf868702bb6ab6a` lacks `package.json`,
-`src/lib/helpers.ts` (including `isTempoAggHook`),
-`src/lib/methodParameters.ts`, and `src/models`; the full service and active
-production route selection cannot be run. The TypeScript patch defines, but
-cannot wire, the private service's real plan and validator. Current-block
-support, live Permit2 handling, production ranking, and state-interaction
-checks remain future integration work.
+**Our additions:** the Python quote/plan/validation boundary, focused tests,
+recorded fork results, dashboard, and proposed UniRoute patch. **Upstream
+components:** the deployed Uniswap and Tempo contracts and the existing
+UniRoute step builder; see the [investigation provenance](evidence/README.md).
+**AI assistance:** Codex helped inspect source and traces and draft code,
+tests, and documentation. The numeric claims above come from saved RPC/fork
+results and tests, not AI estimates.
 
-The original 13-test local investigation and real-contract baseline are preserved under [`evidence/`](evidence/README.md). They distinguish mocks, historical receipts, read-only RPC calls, and fork simulations. No unrelated Uniswap production logic was modified.
+Explore the [recorded dashboard](dashboard/index.html),
+[architecture diagram](#architecture), [admission report](ADMISSION_REPORT.md),
+[problem and direction report](PROBLEM_AND_DIRECTION.md),
+[real Tempo investigation](evidence/quote-harness/REAL_TEMPO_REPORT.md), and
+[developer feedback](FEEDBACK.md).
