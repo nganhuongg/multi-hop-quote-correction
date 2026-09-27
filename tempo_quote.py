@@ -7,6 +7,7 @@ Independent hook quotes are *candidates*: full-router validation is separate.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -227,7 +228,8 @@ def quote_candidate(client: TempoClient, route: RouteDescription, amount: int,
 
 
 def _cast(mode: str, signature: str, *args: str) -> str:
-    binary = shutil.which("cast") or str(Path.home() / ".foundry/bin/cast")
+    binary = (os.getenv("FOUNDRY_CAST") or shutil.which("cast")
+              or str(Path.home() / ".foundry/bin/cast"))
     return subprocess.check_output([binary, mode, signature, *args], text=True).strip()
 
 

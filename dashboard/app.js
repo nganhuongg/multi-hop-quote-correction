@@ -159,22 +159,13 @@ caseCards.forEach((card) => card.addEventListener("toggle", () => {
   if (card.open) caseCards.forEach((other) => { if (other !== card) other.open = false; });
 }));
 
-const runProofButton = document.querySelector("#run-proof");
-const forkStatus = document.querySelector("#fork-status");
-const runnerError = document.querySelector("#runner-error");
-const runnerErrorMessage = document.querySelector("#runner-error-message");
+const recordedEvidence = window.quoteBridgeEvidence;
 const runnerCases = [...document.querySelectorAll(".runner-case")];
 const caseAmounts = { gap: "25 cUSD", small: "1 cUSD", illiquid: "1,000,000 cUSD" };
 let selectedCase = "gap";
-let forkReady = false;
 
 function formatTokenAmount(rawAmount, token = "USDT0") {
   return `${new Intl.NumberFormat("en-US", { minimumFractionDigits: 6, maximumFractionDigits: 6 }).format(rawAmount / 1_000_000)} ${token}`;
-}
-
-function setForkStatus(state, message) {
-  forkStatus.className = `fork-status ${state}`;
-  forkStatus.querySelector("b").textContent = message;
 }
 
 function setStage(name, state, label) {
@@ -189,26 +180,14 @@ function setText(id, value) {
   document.querySelector(`#${id}`).textContent = value;
 }
 
-function clearRun() {
-  for (const name of ["baseline", "bridge", "execution", "compare"]) setStage(name, "pending", "Awaiting run");
+function resetRecordView() {
   for (const id of ["baseline-value", "bridge-value", "execution-value", "execution-received", "execution-gas", "compare-quote", "compare-actual", "compare-delta"]) setText(id, "—");
-  setText("baseline-detail", "Choose a case, then run the experiment.");
-  setText("bridge-detail", "The output of the first hook becomes the input of the second.");
-  setText("execution-detail", "Receipt and balance results appear after the local run.");
-  setText("compare-verdict", "No comparison has been run.");
   document.querySelector("#bridge-hops").hidden = true;
   document.querySelector("#bridge-hops").replaceChildren();
   document.querySelector("#plan-order").hidden = true;
   setText("plan-label", "Funded plan");
   setText("plan-description", "Prepare input → swap → deliver output");
   document.querySelector("#why-matters").hidden = true;
-  document.querySelector("#runner-record").hidden = true;
-  runnerError.hidden = true;
-}
-
-function showRunnerError(message) {
-  runnerError.hidden = false;
-  runnerErrorMessage.textContent = message;
 }
 
 runnerCases.forEach((button) => button.addEventListener("click", () => {
@@ -219,46 +198,28 @@ runnerCases.forEach((button) => button.addEventListener("click", () => {
     item.setAttribute("aria-pressed", String(active));
   });
   setText("selected-input", caseAmounts[selectedCase]);
-  clearRun();
+  if (recordedEvidence?.cases?.[selectedCase]) renderRecord(recordedEvidence.cases[selectedCase]);
 }));
 
-async function checkLocalFork() {
-  try {
-    const response = await fetch("/api/status", { cache: "no-store" });
-    if (!response.ok) throw new Error("Dashboard API is unavailable");
-    const status = await response.json();
-    if (!status.ready) {
-      forkReady = false;
-      setForkStatus("offline", "Fork not ready");
-      runProofButton.disabled = true;
-      showRunnerError(status.message);
-      return;
-    }
-    forkReady = true;
-    setForkStatus("ready", `Fork ready · chain ${status.chainId} · block ${status.blockNumber.toLocaleString()}`);
-    runProofButton.disabled = false;
-    runnerError.hidden = true;
-  } catch (error) {
-    forkReady = false;
-    setForkStatus("offline", "Dashboard API not connected");
-    runProofButton.disabled = true;
-    showRunnerError("Serve the dashboard through dashboard_server.py, then start the pinned Anvil fork.");
-  }
-}
-
-function renderRecord(record, elapsedMs) {
+function renderRecord(record) {
   if (record.caseId !== selectedCase || record.amountInRaw !== ({ gap: 25_000_000, small: 1_000_000, illiquid: 1_000_000_000_000 })[selectedCase]) {
-    throw new Error("The fork returned a different test case");
+    throw new Error("The recorded result does not match the selected case");
   }
+  if (record.chainId !== recordedEvidence.provenance.chainId || record.blockHash !== recordedEvidence.provenance.blockHash || !record.snapshotReverted) {
+    throw new Error("The recorded result is not bound to the verified fork state");
+  }
+  resetRecordView();
   const { baseline, quoteBridge, plan, execution, comparison } = record;
   if (baseline.status === "success") {
     setStage("baseline", "good", "Quote returned");
     setText("baseline-value", formatTokenAmount(baseline.amountOutRaw));
-    setText("baseline-detail", "V4Quoter returned an output amount for this input.");
+    setText("baseline-detail", "V4Quoter returned an amount for this input. The standard path works at this size.");
   } else {
     setStage("baseline", "bad", "No quote");
     setText("baseline-value", "No quote");
-    setText("baseline-detail", `${baseline.errorStage}: ${baseline.error}. V4Quoter did not return an amount.`);
+    setText("baseline-detail", record.caseId === "gap"
+      ? `V4Quoter stopped before returning an amount. The trace-identified step is ${baseline.errorStage}; PoolManager held ${formatTokenAmount(record.poolManagerInputBalanceRaw, "cUSD")} while the hook requested ${formatTokenAmount(record.amountInRaw, "cUSD")}.`
+      : `${baseline.errorStage}: ${baseline.error}. V4Quoter did not return an amount.`);
   }
 
   if (quoteBridge.status === "candidate") {
@@ -289,14 +250,14 @@ function renderRecord(record, elapsedMs) {
     setText("execution-value", "Success · status 1");
     setText("execution-received", formatTokenAmount(execution.recipientDeltaRaw));
     setText("execution-gas", `${execution.gasUsed.toLocaleString()} units`);
-    setText("execution-detail", `${execution.hookCalls} hook calls; recipient balance change and receipt measured on the fork.`);
+    setText("execution-detail", `${execution.hookCalls} hook calls; the recipient balance change and transaction receipt were measured on Anvil.`);
   } else {
     const reverted = execution.status === "revert";
     setStage("execution", reverted ? "bad" : "neutral", reverted ? "Reverted" : execution.status === "indeterminate" ? "Indeterminate" : "Not attempted");
     setText("execution-value", reverted ? (execution.receiptStatus === 0 ? "Reverted · status 0" : "Reverted before receipt") : execution.status === "indeterminate" ? "Indeterminate" : "Not attempted");
     if (execution.recipientDeltaRaw != null) setText("execution-received", formatTokenAmount(execution.recipientDeltaRaw));
     if (execution.gasUsed != null) setText("execution-gas", `${execution.gasUsed.toLocaleString()} units`);
-    setText("execution-detail", execution.status === "not-attempted" ? "The hook could not quote this input, so no transaction was sent." : `${execution.errorStage || "Router transaction"}: ${execution.error || "execution did not complete"}`);
+    setText("execution-detail", execution.status === "not-attempted" ? "The hook could not quote this input, so no transaction was sent." : `${execution.errorStage || "Router transaction"}: ${execution.error || "execution did not complete"}. The funded diagnostic transaction produced receipt status ${execution.receiptStatus ?? "unknown"}.`);
   }
 
   if (quoteBridge.amountOutRaw != null) setText("compare-quote", formatTokenAmount(quoteBridge.amountOutRaw));
@@ -310,45 +271,24 @@ function renderRecord(record, elapsedMs) {
     setText("compare-verdict", comparison.reason);
   }
 
+  const beforeAmount = baseline.amountOutRaw == null ? "No quote" : formatTokenAmount(baseline.amountOutRaw);
+  const afterAmount = quoteBridge.amountOutRaw == null ? "No usable quote" : formatTokenAmount(quoteBridge.amountOutRaw);
+  setText("before-summary", beforeAmount);
+  setText("before-summary-note", baseline.status === "success"
+    ? "V4Quoter returned the same amount as the verified route."
+    : record.caseId === "gap" ? "Simulation stopped at the first hook's input transfer." : "V4Quoter did not produce a quote for this large input.");
+  setText("after-summary", afterAmount);
+  setText("after-summary-note", execution.status === "success"
+    ? `Funded Router receipt: status 1. Recipient gained ${formatTokenAmount(execution.recipientDeltaRaw)}.`
+    : `Tempo quote: ${quoteBridge.error}. Funded Router receipt: status ${execution.receiptStatus}; recipient gained ${formatTokenAmount(execution.recipientDeltaRaw)}.`);
+  document.querySelector("#before-card").dataset.state = baseline.status === "success" ? "good" : "bad";
+  document.querySelector("#after-card").dataset.state = comparison.status === "matched" ? "good" : "bad";
   document.querySelector("#why-matters").hidden = !record.whyThisMatters;
-  setText("record-summary", `Case ${record.caseId} · block ${record.blockNumber.toLocaleString()} · input ${record.amountInRaw} raw cUSD · baseline ${baseline.status} · QuoteBridge ${quoteBridge.status} · execution ${execution.status} · recipient delta ${execution.recipientDeltaRaw ?? "n/a"} · gas ${execution.gasUsed ?? "n/a"} · error stage ${quoteBridge.errorStage || baseline.errorStage || execution.errorStage || "none"} · snapshot reverted`);
-  setText("record-identifiers", `Block ${record.blockHash} · plan ${plan.planDigest || "not built"} · local tx ${execution.localForkTxHash || "not sent"} · ${elapsedMs.toLocaleString()} ms`);
-  document.querySelector("#runner-record").hidden = false;
+  setText("record-summary", `Case ${record.caseId} · ${formatTokenAmount(record.amountInRaw, "cUSD")} · PoolManager held ${formatTokenAmount(record.poolManagerInputBalanceRaw, "cUSD")} · baseline ${baseline.status} · QuoteBridge ${quoteBridge.status} · transaction ${execution.status} · receipt gas ${execution.gasUsed ?? "n/a"} · ${record.rpcCalls} RPC calls · ${record.elapsedMs.toLocaleString()} ms`);
+  setText("record-identifiers", `Block ${record.blockNumber.toLocaleString()} · ${record.blockHash} · plan ${plan.planDigest || "not built"} · local fork tx ${execution.localForkTxHash || "not sent"}`);
 }
 
-runProofButton.addEventListener("click", async () => {
-  clearRun();
-  runProofButton.disabled = true;
-  runnerCases.forEach((button) => { button.disabled = true; });
-  runProofButton.classList.add("running");
-  runProofButton.querySelector("span").textContent = "Running selected case";
-  runProofButton.querySelector("i").textContent = "↻";
-  setForkStatus("checking", "Running one fork snapshot");
-  for (const name of ["baseline", "bridge", "execution", "compare"]) setStage(name, "running", "Running");
-  try {
-    const response = await fetch("/api/run-universal-router", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ caseId: selectedCase })
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) throw new Error(payload.error || "The fork experiment failed");
-    renderRecord(payload.record, payload.elapsedMs);
-    setForkStatus("ready", "Run complete · fork snapshot reverted");
-  } catch (error) {
-    for (const name of ["baseline", "bridge", "execution", "compare"]) setStage(name, "neutral", "No live result");
-    setForkStatus("offline", "Proof stopped");
-    showRunnerError(error.message);
-  } finally {
-    runProofButton.disabled = !forkReady;
-    runnerCases.forEach((button) => { button.disabled = false; });
-    runProofButton.classList.remove("running");
-    runProofButton.querySelector("span").textContent = "Run selected case again";
-    runProofButton.querySelector("i").textContent = "→";
-  }
-});
-
-checkLocalFork();
+if (recordedEvidence?.cases?.gap) renderRecord(recordedEvidence.cases.gap);
 
 const pipelineStages = {
   classify: {

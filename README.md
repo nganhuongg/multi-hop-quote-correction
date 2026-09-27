@@ -95,7 +95,26 @@ Exchange behavior on the fork. Public UniRoute already has an exact-input
 The public UniRoute checkout lacks components needed to run the complete
 service and connect its real final-plan validator.
 
-## Quick start
+## View the recorded dashboard
+
+Open [dashboard/index.html](dashboard/index.html#solution) and select one of
+the three inputs. The Solution tab loads the saved [Anvil results](dashboard/solution-results.js)
+directly, including the standard V4Quoter result, QuoteBridge quote, funded
+Universal Router receipt, recipient balance change, and gas. No RPC, Anvil,
+or dashboard API is needed to inspect the measured cases.
+
+| Input | Standard quote | QuoteBridge quote | Funded Router receipt |
+|---|---|---|---|
+| 1 cUSD | 0.999899 USDT0 | 0.999899 USDT0 | Status 1; +0.999899 USDT0; 316,180 gas |
+| 25 cUSD | No quote | 24.997499 USDT0 | Status 1; +24.997499 USDT0; 316,216 gas |
+| 1,000,000 cUSD | No quote | `InsufficientLiquidity()`; no candidate | Status 0; +0 USDT0; 729,270 gas |
+
+All three results were measured with Anvil 1.8.3 at Tempo block 41,183,156
+using `https://rpc.tempo.xyz`. Each case restored its fork snapshot. The
+large-input transaction used a diagnostic-only zero-minimum-output plan;
+it is not an accepted quote or execution plan.
+
+## Reproduce the fork runs
 
 Requires Python **3.12+**, Foundry `anvil` and `cast`, and a Tempo archive RPC
 serving the recorded block. Run from this repository root:
@@ -122,19 +141,15 @@ export TEMPO_FORK_RPC=http://127.0.0.1:8549
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target USDT0 --amount 25
 .venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target PathUSD --amount 1
-.venv/bin/python dashboard_server.py
-UNIROUTE_PUBLIC_DIR=/absolute/path/to/uniroute-public node scripts/test_upstream_patch.cjs
+.venv/bin/python dashboard_proof.py --rpc "$TEMPO_FORK_RPC" --case small
+.venv/bin/python dashboard_proof.py --rpc "$TEMPO_FORK_RPC" --case gap
+.venv/bin/python dashboard_proof.py --rpc "$TEMPO_FORK_RPC" --case illiquid
 ```
 
-The dashboard server opens the interactive proof at
-`http://127.0.0.1:8765/dashboard/#solution`. Select 1, 25, or 1,000,000
-cUSD and run the case. The case runner uses one state snapshot for the baseline
-quote, hook quote, execution plan, full Universal Router receipt when executable,
-and recipient balance change. It then reverts that snapshot. The dashboard
-server holds a second, outer safety snapshot so a timed-out worker cannot
-contaminate the next run. For the large-input
-control, a zero-minimum-output diagnostic plan probes the full Router revert
-after the hook returns insufficient liquidity; it is never treated as a quote.
+Each `dashboard_proof.py` run measures the baseline quote, hook quotes,
+execution plan, full Router receipt, and recipient balance change from one
+fork snapshot, then reverts it. If `cast` is not on Python's `PATH`, set
+`FOUNDRY_CAST` to the absolute path of the `cast` executable.
 The scripts send transactions **only to local Anvil**, then revert their
 snapshots; they never broadcast to Tempo. The ordinary-route comparison test
 uses boundary mocks, not a real ordinary-route fork measurement. See the

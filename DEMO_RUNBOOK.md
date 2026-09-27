@@ -35,24 +35,29 @@ export TEMPO_FORK_RPC=http://127.0.0.1:8549
 .venv/bin/python dispatch_demo.py --rpc "$TEMPO_FORK_RPC" --target PathUSD --amount 1
 ```
 
-To run the same full Universal Router proof from the dashboard, keep the fresh
-fork running and start the local dashboard API from the project root:
+The [Solution dashboard](dashboard/index.html#solution) displays the three
+recorded Anvil cases immediately. Selecting a case changes the displayed
+before/after quote and funded execution result; viewers do not need Anvil or
+an RPC endpoint. The saved records and fork provenance are in
+[`dashboard/solution-results.js`](dashboard/solution-results.js).
+
+To independently remeasure all three dashboard cases, keep the fresh fork
+running and execute each case from the project root:
 
 ```bash
 export TEMPO_FORK_RPC=http://127.0.0.1:8549
-.venv/bin/python dashboard_server.py
+.venv/bin/python dashboard_proof.py --rpc "$TEMPO_FORK_RPC" --case small
+.venv/bin/python dashboard_proof.py --rpc "$TEMPO_FORK_RPC" --case gap
+.venv/bin/python dashboard_proof.py --rpc "$TEMPO_FORK_RPC" --case illiquid
 ```
 
-Open `http://127.0.0.1:8765/dashboard/#solution`, choose **1**, **25**, or
-**1,000,000 cUSD**, and select **Run selected case**. The browser calls only
-the loopback dashboard server. It invokes `dashboard_proof.py`, which uses
-the existing fork runner to measure the baseline quote, compose the hook
-quote, build the funded plan where possible, execute the deployed Universal
-Router where possible, read the receipt and recipient balance, and revert
-one snapshot. For the large-input control, the hook quote fails with
-`InsufficientLiquidity()`. A diagnostic-only Router plan with zero minimum
-output then checks the funded transaction's revert on the same fork snapshot;
-it is never admitted as a quote.
+The case runner measures the baseline quote, composes the hook quote, builds
+the funded plan, executes the deployed Router, reads the receipt and recipient
+balance, and reverts the snapshot. The 1,000,000-cUSD control returns
+`InsufficientLiquidity()` from the hook quote. Its zero-minimum-output Router
+plan is a diagnostic probe: the funded transaction reverts with receipt status
+0, and the plan is never admitted as a quote. If `cast` is not on Python's
+`PATH`, set `FOUNDRY_CAST` to its absolute executable path.
 
 | Case | Evidence and expected result |
 |---|---|
